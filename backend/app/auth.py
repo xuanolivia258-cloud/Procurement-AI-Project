@@ -1,0 +1,13 @@
+from fastapi import HTTPException, status
+
+from .config import settings
+from .schemas import Actor
+
+
+def get_actor() -> Actor:
+    if settings.auth_mode != "disabled":
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail={"code": "AUTH_PROVIDER_NOT_CONFIGURED", "message": "External authentication is not configured."},
+        )
+    return Actor(id=settings.local_actor_id, name=settings.local_actor_name, role="admin")

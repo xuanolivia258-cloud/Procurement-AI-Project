@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="CARI Procurement Project Tracking login page">
+  <title>CARI Procurement Project Tracking</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <button class="language-toggle" id="languageToggle" type="button" aria-label="Switch to Chinese">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.3 2.5 3.5 5.5 3.5 9S14.3 18.5 12 21M12 3C9.7 5.5 8.5 8.5 8.5 12s1.2 6.5 3.5 9"/></svg>
+    <span id="languageToggleText">中文</span>
+  </button>
+  <div class="aurora aurora-one" aria-hidden="true"></div>
+  <div class="aurora aurora-two" aria-hidden="true"></div>
+
+  <main class="page-shell" id="loginPage">
+    <section class="intro" aria-labelledby="brand-title">
+      <a class="brand" href="#" aria-label="CARI Procurement Project Tracking home">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" role="img">
+            <path d="M16 3 19.2 12.8 29 16l-9.8 3.2L16 29l-3.2-9.8L3 16l9.8-3.2L16 3Z"/>
+          </svg>
+        </span>
+        <span data-i18n="brandName">CARI Procurement Project Tracking</span>
+      </a>
+      <div class="intro-copy">
+        <p class="eyebrow" data-i18n="tagline">SMARTER PROCUREMENT, CLEARER PROGRESS</p>
+        <h1 id="brand-title" data-i18n-html="heroTitle">CARI Procurement<br>Project Tracking</h1>
+        <p data-i18n="heroCopy">Sign in to monitor procurement activities, project milestones, and delivery progress.</p>
+      </div>
+      <div class="trust-note">
+        <span class="avatars" aria-hidden="true">
+          <span>CA</span><span>PR</span><span>PT</span>
+        </span>
+        <span data-i18n="trustCopy">One place for procurement project visibility</span>
+      </div>
+    </section>
+
+    <section class="login-panel" aria-labelledby="login-title">
+      <div class="login-card" id="loginCard">
+        <div class="form-view" id="formView">
+          <header class="card-header">
+            <span class="mobile-brand-mark" aria-hidden="true">✦</span>
+            <p class="eyebrow">WELCOME BACK</p>
+            <h2 id="login-title" data-i18n-html="loginTitle">CARI Procurement<br>Project Tracking</h2>
+          </header>
+
+          <form id="loginForm" novalidate>
+            <div class="field-group">
+              <label for="email" data-i18n="emailLabel">Email address</label>
+              <div class="input-wrap">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v12H4zM4 7l8 6 8-6"/></svg>
+                <input id="email" name="email" type="text" autocomplete="username" aria-describedby="emailError">
+              </div>
+              <p class="field-error" id="emailError" aria-live="polite"></p>
+            </div>
+
+            <div class="field-group">
+              <div class="label-row">
+                <label for="password" data-i18n="passwordLabel">Password</label>
+                <button class="text-button" id="forgotButton" type="button" data-i18n="forgotPassword">Forgot password?</button>
+              </div>
+              <div class="input-wrap">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+                <input id="password" name="password" type="password" autocomplete="current-password" aria-describedby="passwordError">
+                <button class="password-toggle" id="passwordToggle" type="button" aria-label="Show password" aria-pressed="false">
+                  <svg class="eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.5"/></svg>
+                  <svg class="eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="m3 3 18 18M10.6 6.1A9.8 9.8 0 0 1 12 6c6 0 9.5 6 9.5 6a15.8 15.8 0 0 1-2.2 2.9M6.2 6.2C3.8 8 2.5 12 2.5 12s3.5 6 9.5 6a9.6 9.6 0 0 0 3-.5"/></svg>
+                </button>
+              </div>
+              <p class="field-error" id="passwordError" aria-live="polite"></p>
+            </div>
+
+            <label class="remember-row">
+              <input id="remember" name="remember" type="checkbox">
+              <span class="custom-checkbox" aria-hidden="true">
+                <svg viewBox="0 0 14 14"><path d="m3 7 2.5 2.5L11 4"/></svg>
+              </span>
+              <span data-i18n="rememberEmail">Remember my email</span>
+            </label>
+
+            <button class="submit-button" id="submitButton" type="submit">
+              <span class="button-label" data-i18n="signIn">Sign in</span>
+              <span class="spinner" aria-hidden="true"></span>
+              <svg class="button-arrow" viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12m-4-4 4 4-4 4"/></svg>
+            </button>
+          </form>
+
+        </div>
+
+        <div class="success-view" id="successView" hidden aria-live="polite">
+          <div class="success-icon" aria-hidden="true">
+            <svg viewBox="0 0 48 48"><path d="m14 25 7 7 14-16"/></svg>
+          </div>
+          <p class="eyebrow">SIGNED IN</p>
+          <h2 data-i18n="successTitle">Sign-in successful</h2>
+          <p><span data-i18n="welcomeBack">Welcome back,</span> <strong id="successEmail"></strong><br><span data-i18n="workspaceReady">Your project workspace is ready.</span></p>
+          <button class="secondary-button" id="backButton" type="button" data-i18n="backToSignIn">Back to sign in</button>
+        </div>
+      </div>
+      <p class="legal" data-i18n-html="legal">By signing in, you agree to our <a href="#">Terms of Service</a> and <a href="#">Privacy Policy</a>.</p>
+    </section>
+  </main>
+
+  <section class="workspace-view" id="workspaceView" hidden aria-labelledby="workspaceTitle">
+    <header class="workspace-header">
+      <div class="workspace-brand">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32"><path d="M16 3 19.2 12.8 29 16l-9.8 3.2L16 29l-3.2-9.8L3 16l9.8-3.2L16 3Z"/></svg>
+        </span>
+        <span data-i18n="workspaceBrand">CARI Procurement Project Tracking</span>
+      </div>
+    </header>
+
+    <div class="workspace-main">
+      <button class="overview-signout" id="logoutButton" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 5H5v14h5M14 8l4 4-4 4M8 12h10"/></svg>
+        <span data-i18n="signOut">Sign out</span>
+      </button>
+      <p class="eyebrow" data-i18n="workspaceEyebrow">PROJECT WORKSPACE</p>
+      <div class="workspace-title-row">
+        <div>
+          <h1 id="workspaceTitle" data-i18n="workspaceTitle">Welcome to CARI Procurement Project Tracking</h1>
+        </div>
+        <button class="create-project-button" id="createProjectButton" type="button">
+          <span aria-hidden="true">＋</span>
+          <span data-i18n="createProject">Create New Project</span>
+        </button>
+      </div>
+
+      <div class="workspace-grid" aria-label="Project summary">
+        <button class="summary-card summary-button" id="activeProjectsButton" type="button">
+          <span data-i18n="activeProjects">Active Project</span>
+          <strong id="activeProjectCount">0</strong>
+          <small data-i18n="viewProjects">View projects →</small>
+        </button>
+        <button class="summary-card summary-button" id="finishedProjectsButton" type="button">
+          <span data-i18n="finishedProjects">Finished Project</span>
+          <strong id="finishedProjectCount">0</strong>
+          <small data-i18n="viewProjects">View projects →</small>
+        </button>
+      </div>
+
+      <section class="project-list-section" id="projectListSection" hidden>
+        <h2 data-i18n="recentProjects">Recent projects</h2>
+        <div class="project-list" id="projectList"></div>
+      </section>
+    </div>
+  </section>
+
+  <section class="active-projects-page" id="activeProjectsView" hidden aria-labelledby="activeProjectsTitle">
+    <header class="workspace-header">
+      <div class="workspace-brand">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32"><path d="M16 3 19.2 12.8 29 16l-9.8 3.2L16 29l-3.2-9.8L3 16l9.8-3.2L16 3Z"/></svg>
+        </span>
+        <span data-i18n="workspaceBrand">CARI Procurement Project Tracking</span>
+      </div>
+    </header>
+
+    <main class="active-projects-main">
+      <button class="inline-back-button" id="backFromActiveProjects" type="button">
+        <span aria-hidden="true">←</span>
+        <span data-i18n="backToOverview">Back to overview</span>
+      </button>
+      <p class="eyebrow" data-i18n="projectPortfolio">PROJECT PORTFOLIO</p>
+      <h1 id="activeProjectsTitle" data-i18n="activeProjectsTitle">Active Projects</h1>
+
+      <div class="priority-filter" id="priorityFilter" aria-label="Filter projects by priority">
+        <span class="priority-filter-label" data-i18n="filterByPriority">Filter by priority</span>
+        <div class="priority-filter-buttons">
+          <button class="priority-filter-button active" type="button" data-priority="all" aria-pressed="true" data-i18n="filterAll">All</button>
+          <button class="priority-filter-button" type="button" data-priority="High" aria-pressed="false" data-i18n="high">High</button>
+          <button class="priority-filter-button" type="button" data-priority="Medium" aria-pressed="false" data-i18n="medium">Medium</button>
+          <button class="priority-filter-button" type="button" data-priority="Normal" aria-pressed="false" data-i18n="normal">Normal</button>
+        </div>
+        <label class="ceg-filter" for="cegFilterInput">
+          <span data-i18n="filterByCeg">CEG</span>
+          <input id="cegFilterInput" type="search" data-i18n-placeholder="cegFilterPlaceholder" placeholder="Search CEG" autocomplete="off">
+        </label>
+      </div>
+
+      <div class="active-empty" id="activeProjectsEmpty">
+        <h2 data-i18n="noProjectsTitle">No active projects yet</h2>
+        <p data-i18n="noProjectsCopy">Create a project from the overview page and it will appear here.</p>
+      </div>
+
+      <div class="project-table-wrap" id="projectTableWrap" hidden>
+        <table class="project-table">
+          <thead>
+            <tr>
+              <th>Priority</th>
+              <th>CEG</th>
+              <th>Requestor</th>
+              <th>BU</th>
+              <th>Request Date</th>
+              <th>Budget (USD)</th>
+              <th>Description</th>
+              <th>Supplier Name</th>
+              <th>Supplier Type</th>
+              <th>Procurement Strategy</th>
+              <th>Procurement Status</th>
+              <th>EC Form</th>
+              <th>PR Approved Date</th>
+              <th>PO Release Date</th>
+              <th>Estimated Project Closing Date</th>
+            </tr>
+          </thead>
+          <tbody id="activeProjectsTableBody"></tbody>
+        </table>
+      </div>
+    </main>
+  </section>
+
+  <section class="project-page" id="projectModal" hidden aria-labelledby="projectModalTitle">
+    <header class="workspace-header">
+      <div class="workspace-brand">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32"><path d="M16 3 19.2 12.8 29 16l-9.8 3.2L16 29l-3.2-9.8L3 16l9.8-3.2L16 3Z"/></svg>
+        </span>
+        <span data-i18n="workspaceBrand">CARI Procurement Project Tracking</span>
+      </div>
+    </header>
+
+    <main class="project-form-page">
+      <p class="eyebrow" data-i18n="newProjectEyebrow">NEW PROCUREMENT PROJECT</p>
+      <h1 id="projectModalTitle" data-i18n="newProjectTitle">Create a new project</h1>
+      <p class="project-form-intro" data-i18n="newProjectCopy">Complete the information below to create a procurement project.</p>
+
+      <form id="projectForm" novalidate>
+        <div class="project-form-grid">
+          <div class="project-field">
+            <label for="ceg">CEG</label>
+            <input id="ceg" name="ceg" type="text">
+            <p class="field-error" aria-live="polite"></p>
+          </div>
+          <div class="project-field">
+            <label for="requestor">Requestor</label>
+            <input id="requestor" name="requestor" type="text">
+            <p class="field-error" aria-live="polite"></p>
+          </div>
+          <div class="project-field">
+            <label for="requestDate">Request Date</label>
+            <input id="requestDate" name="requestDate" type="date">
+            <p class="field-error" aria-live="polite"></p>
+          </div>
+          <div class="project-field">
+            <label for="bu">BU</label>
+            <input id="bu" name="bu" type="text">
+            <p class="field-error" aria-live="polite"></p>
+          </div>
+          <div class="project-field">
+            <label for="prApprovedDate">PR Approved Date</label>
+            <input id="prApprovedDate" name="prApprovedDate" type="date">
+            <p class="field-error" aria-live="polite"></p>
+          </div>
+          <div class="project-field">
+            <label for="budget">Budget (USD)</label>
+            <input id="budget" name="budget" type="number" min="0" step="0.01">
+            <p class="field-error" aria-live="polite"></p>
+          </div>
+          <div class="project-field">
+            <label for="estimatedClosingDate">Estimated Project Closing Date</label>
+            <input id="estimatedClosingDate" name="estimatedClosingDate" type="date">
+            <p class="field-error" aria-live="polite"></p>
+          </div>
+          <div class="project-field project-field-full">
+            <label for="description">Description</label>
+            <textarea id="description" name="description" rows="4"></textarea>
+            <p class="field-error" aria-live="polite"></p>
+          </div>
+          <div class="project-field">
+            <label for="supplierType">Supplier Type</label>
+            <select id="supplierType" name="supplierType">
+              <option value="" data-i18n="selectOption">Select an option</option>
+              <option value="Payment Only">Payment Only</option>
+              <option value="Simplified">Simplified</option>
+              <option value="Sporadic">Sporadic</option>
+              <option value="Official">Official</option>
+            </select>
+            <p class="field-error" aria-live="polite"></p>
+          </div>
+          <div class="project-field">
+            <label for="supplierName">Supplier Name</label>
+            <input id="supplierName" name="supplierName" type="text">
+            <p class="field-error" aria-live="polite"></p>
+          </div>
+          <div class="project-field">
+            <label for="procurementStrategy">Procurement Strategy</label>
+            <select id="procurementStrategy" name="procurementStrategy">
+              <option value="" data-i18n="selectOption">Select an option</option>
+              <option value="Negotiation">Negotiation</option>
+              <option value="Cost Comparison">Cost Comparison</option>
+              <option value="Bidding">Bidding</option>
+            </select>
+            <p class="field-error" aria-live="polite"></p>
+          </div>
+          <div class="project-field">
+            <label for="procurementStatus">Procurement Status</label>
+            <select id="procurementStatus" name="procurementStatus">
+              <option value="" data-i18n="selectOption">Select an option</option>
+              <option value="Sourcing">Sourcing</option>
+              <option value="Qualification">Qualification</option>
+              <option value="Supplier Selection">Supplier Selection</option>
+              <option value="Contract Review">Contract Review</option>
+              <option value="PO Release">PO Release</option>
+            </select>
+            <p class="field-error" aria-live="polite"></p>
+          </div>
+          <div class="project-field">
+            <label for="projectPriority">Priority</label>
+            <select id="projectPriority" name="projectPriority">
+              <option value="" data-i18n="selectOption">Select an option</option>
+              <option value="Normal">Normal</option>
+              <option value="Medium">Medium</option>
+              <option value="High">High</option>
+            </select>
+            <p class="field-error" aria-live="polite"></p>
+          </div>
+          <div class="project-field">
+            <label for="ecForm">EC Form</label>
+            <select id="ecForm" name="ecForm">
+              <option value="" data-i18n="selectOption">Select an option</option>
+              <option value="Y">Y</option>
+              <option value="N">N</option>
+            </select>
+            <p class="field-error" aria-live="polite"></p>
+          </div>
+          <div class="project-field">
+            <label for="poReleaseDate">PO Release Date</label>
+            <input id="poReleaseDate" name="poReleaseDate" type="date">
+            <p class="field-error" aria-live="polite"></p>
+          </div>
+        </div>
+        <footer class="project-page-actions">
+          <button class="wizard-back" id="wizardBack" type="button" data-i18n="cancel">Cancel</button>
+          <button class="wizard-next" id="wizardSubmit" type="submit" data-i18n="createProject">Create New Project</button>
+          <button id="wizardNext" type="button" hidden></button>
+          <span id="stepIndicator" hidden></span><span id="progressBar" hidden></span>
+        </footer>
+      </form>
+    </main>
+  </section>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
+  <script src="script.js"></script>
+</body>
+</html>
