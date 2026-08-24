@@ -284,10 +284,10 @@ function ProjectDialog({ project, copyMode = false, language, close }: { project
       <section className="form-section financial-section"><SectionHeading number="02" title="Budget" description="Original budget and live USD conversion" /><div className="form-grid">
         <Field label="Amount (excl.tax)"><input type="text" inputMode="decimal" pattern="[0-9]+([.][0-9]*)?" placeholder="0.00" {...register('budget')} onBlur={(event) => { const value = event.currentTarget.value.trim(); if (value && /^\d+(\.\d*)?$/.test(value)) { const formatted = (Math.round((Number(value) + Number.EPSILON) * 100) / 100).toFixed(2); event.currentTarget.value = formatted; setValue('budget', formatted, { shouldDirty: true, shouldValidate: true }); } }} /></Field>
         <Field label="Currency"><select {...register('currency')}><option value="">Select</option><option>CAD</option><option>USD</option><option>CNY</option></select></Field>
-        <Field label="Exchange Rate"><input readOnly {...register('exchange_rate')} placeholder={rateLoading ? 'Loading Yahoo Finance…' : 'Select currency'} />{rateError && <small className="field-error">Yahoo Finance rate unavailable</small>}</Field>
+        <Field label="Exchange Rate"><input readOnly {...register('exchange_rate')} placeholder={rateLoading ? 'Loading exchange rate…' : 'Select currency'} />{rateError && <small className="field-error">Exchange rate service unavailable</small>}</Field>
         <Field label="USD Amount"><input readOnly {...register('usd_amount')} placeholder="0.00" /></Field>
         <input type="hidden" {...register('exchange_rate_at')} />
-      </div><p className="rate-source">◆ Live conversion powered by Yahoo Finance</p></section>
+      </div><p className="rate-source">◆ Live conversion powered by Huawei iData Finance</p></section>
       <section className="form-section"><SectionHeading number="03" title="Supplier & Procurement" description="Supplier profile, sourcing approach and current status" /><ProcurementProgress status={procurementStatus} /><div className="form-grid">
         <Field label="Supplier Name"><input {...register('supplier_name')} onBlur={capitalizeOnBlur('supplier_name')} /></Field>
         <Field label="Supplier Type"><select {...register('supplier_type')}><option value="">Select</option>{optionList('supplier_type').map((o) => <option key={o.id} value={o.code}>{language === 'zh' ? o.label_zh : o.label_en}{!o.active ? ' (inactive)' : ''}</option>)}</select></Field>

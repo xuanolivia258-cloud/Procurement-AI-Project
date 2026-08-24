@@ -4,7 +4,7 @@ import math
 import re
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
@@ -237,17 +237,42 @@ def session(actor: Actor = Depends(get_actor)):
     return {"actor": actor}
 
 
-def parse_yahoo_finance_rate(payload: dict) -> tuple[Decimal, datetime | None]:
-    result = payload.get("chart", {}).get("result") or []
-    if not result:
-        raise ValueError("Yahoo Finance returned no quote.")
-    meta = result[0].get("meta", {})
-    price = meta.get("regularMarketPrice")
-    if price is None:
-        raise ValueError("Yahoo Finance rate was not found in the response.")
-    market_time = meta.get("regularMarketTime")
-    quoted_at = datetime.fromtimestamp(market_time, timezone.utc) if market_time else None
-    return Decimal(str(price)), quoted_at
+def parse_exchange_rate_response(
+    payload: dict, from_currency: str, to_currency: str, rate_type: str,
+) -> tuple[Decimal, datetime | None]:
+    if str(payload.get("status")) != "200":
+        raise ValueError("Exchange rate service returned an unsuccessful status.")
+    data = payload.get("data")
+    result = data.get("result") if isinstance(data, dict) else None
+    if not isinstance(result, list) or not result:
+        raise ValueError("Exchange rate service returned no quote.")
+
+    expected_from = from_currency.upper()
+    expected_to = to_currency.upper()
+    expected_type = rate_type.upper()
+    quote = next((item for item in result if isinstance(item, dict)
+        and str(item.get("from_currency", "")).upper() == expected_from
+        and str(item.get("to_currency", "")).upper() == expected_to
+        and str(item.get("rate_type", "")).upper() == expected_type), None)
+    if quote is None:
+        raise ValueError("Exchange rate service returned no matching quote.")
+
+    try:
+        rate = Decimal(str(quote.get("rate_value")))
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise ValueError("Exchange rate service returned an invalid rate.") from exc
+    if not rate.is_finite() or rate <= 0:
+        raise ValueError("Exchange rate service returned an invalid rate.")
+
+    rate_date = quote.get("rate_date")
+    quoted_at = None
+    if rate_date:
+        try:
+            quoted_date = date.fromisoformat(str(rate_date).replace("/", "-"))
+        except ValueError as exc:
+            raise ValueError("Exchange rate service returned an invalid rate date.") from exc
+        quoted_at = datetime(quoted_date.year, quoted_date.month, quoted_date.day, tzinfo=timezone.utc)
+    return rate, quoted_at
 
 
 @app.get("/api/exchange-rate")
@@ -255,16 +280,46 @@ def exchange_rate(currency: Currency, _actor: Actor = Depends(get_actor)):
     fetched_at = datetime.now(timezone.utc)
     if currency == "USD":
         return {"currency": currency, "target_currency": "USD", "rate": "1.00000000", "fetched_at": fetched_at, "source": "USD base rate"}
-    symbol = f"{currency}USD=X"
-    data_url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
-    source_url = f"https://finance.yahoo.com/quote/{symbol}"
+    tenant_id = settings.exchange_rate_tenant_id.strip()
+    rate_type = settings.exchange_rate_rate_type.strip()
+    if not tenant_id or not rate_type:
+        raise HTTPException(503, detail={
+            "code": "EXCHANGE_RATE_NOT_CONFIGURED",
+            "message": "Exchange rate service is not configured.",
+        })
+    request_payload = {
+        "tenant_id": tenant_id,
+        "curPage": "1",
+        "pageSize": "20",
+        "multi_rate_type_flag": "Y",
+        "data": [{
+            "from_currency": currency,
+            "to_currency": "USD",
+            "rate_type": rate_type,
+            "start_date": fetched_at.strftime("%Y/%m/%d"),
+        }],
+    }
     try:
-        response = httpx.get(data_url, headers={"User-Agent": "Mozilla/5.0"}, follow_redirects=True, timeout=10.0)
+        response = httpx.post(
+            settings.exchange_rate_api_url,
+            json=request_payload,
+            follow_redirects=True,
+            timeout=settings.exchange_rate_timeout_seconds,
+        )
         response.raise_for_status()
-        rate, quoted_at = parse_yahoo_finance_rate(response.json())
+        rate, quoted_at = parse_exchange_rate_response(response.json(), currency, "USD", rate_type)
     except (httpx.HTTPError, ValueError) as exc:
-        raise HTTPException(502, detail={"code": "EXCHANGE_RATE_UNAVAILABLE", "message": "Yahoo Finance exchange rate is temporarily unavailable."}) from exc
-    return {"currency": currency, "target_currency": "USD", "rate": str(rate), "fetched_at": quoted_at or fetched_at, "source": source_url}
+        raise HTTPException(502, detail={
+            "code": "EXCHANGE_RATE_UNAVAILABLE",
+            "message": "Exchange rate service is temporarily unavailable.",
+        }) from exc
+    return {
+        "currency": currency,
+        "target_currency": "USD",
+        "rate": str(rate),
+        "fetched_at": quoted_at or fetched_at,
+        "source": "Huawei iData Finance",
+    }
 
 
 @app.get("/api/projects", response_model=PaginatedProjects)

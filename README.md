@@ -55,6 +55,10 @@ npm run dev
 
 The Vite development server proxies `/api` to `http://localhost:8000` by default.
 
+## Exchange rate service
+
+The Budget section requests live rates from the backend, which calls the Huawei iData Finance batch exchange-rate service. Configure `EXCHANGE_RATE_TENANT_ID` with the calling application's 32-character enterprise tenant ID before requesting a non-USD rate. The default endpoint is the documented service-sink (medium-security) HTTPS access point; use `EXCHANGE_RATE_API_URL` to select the E-zone endpoint when required. `EXCHANGE_RATE_RATE_TYPE` defaults to `SPOT`.
+
 ## Database changes and tests
 
 Create and apply a migration from `backend/`:

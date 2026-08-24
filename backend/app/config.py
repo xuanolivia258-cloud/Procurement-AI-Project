@@ -10,6 +10,10 @@ class Settings(BaseSettings):
     local_actor_id: str = "local-test-user"
     local_actor_name: str = "Local Test User"
     cors_origins: str = "http://localhost:5173,http://localhost:8080"
+    exchange_rate_api_url: str = "https://apigp-kwe.huawei.com/api/idata/fin/v2/projects/project_id/getBatchRatemsRateList"
+    exchange_rate_tenant_id: str = ""
+    exchange_rate_rate_type: str = "SPOT"
+    exchange_rate_timeout_seconds: float = 10.0
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

@@ -6,6 +6,10 @@ services:
       AUTH_MODE: disabled
       LOCAL_ACTOR_ID: local-test-user
       LOCAL_ACTOR_NAME: Local Test User
+      EXCHANGE_RATE_API_URL: ${EXCHANGE_RATE_API_URL:-https://apigp-kwe.huawei.com/api/idata/fin/v2/projects/project_id/getBatchRatemsRateList}
+      EXCHANGE_RATE_TENANT_ID: ${EXCHANGE_RATE_TENANT_ID:-}
+      EXCHANGE_RATE_RATE_TYPE: ${EXCHANGE_RATE_RATE_TYPE:-SPOT}
+      EXCHANGE_RATE_TIMEOUT_SECONDS: ${EXCHANGE_RATE_TIMEOUT_SECONDS:-10}
     volumes:
       - procurement_data:/app/data
     ports:
