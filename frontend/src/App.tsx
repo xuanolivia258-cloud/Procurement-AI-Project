@@ -283,7 +283,7 @@ function ProjectDialog({ project, copyMode = false, language, close }: { project
       </div></section>
       <section className="form-section financial-section"><SectionHeading number="02" title="Budget" description="Original budget and live USD conversion" /><div className="form-grid">
         <Field label="Amount (excl.tax)"><input type="text" inputMode="decimal" pattern="[0-9]+([.][0-9]*)?" placeholder="0.00" {...register('budget')} onBlur={(event) => { const value = event.currentTarget.value.trim(); if (value && /^\d+(\.\d*)?$/.test(value)) { const formatted = (Math.round((Number(value) + Number.EPSILON) * 100) / 100).toFixed(2); event.currentTarget.value = formatted; setValue('budget', formatted, { shouldDirty: true, shouldValidate: true }); } }} /></Field>
-        <Field label="Currency"><select {...register('currency')}><option value="">Select</option><option>CAD</option><option>USD</option><option>CNY</option></select></Field>
+        <Field label="Currency"><select {...register('currency')}><option value="">Select</option><option>CAD</option><option>USD</option><option>CNY</option><option>EUR</option></select></Field>
         <Field label="Exchange Rate"><input readOnly {...register('exchange_rate')} placeholder={rateLoading ? 'Loading exchange rate…' : 'Select currency'} />{rateError && <small className="field-error">Exchange rate service unavailable</small>}<small className="rate-source">Rate source: {currency === 'USD' ? 'USD base rate' : 'Huawei iData Finance'}</small></Field>
         <Field label="USD Amount"><input readOnly {...register('usd_amount')} placeholder="0.00" /></Field>
         <input type="hidden" {...register('exchange_rate_at')} />

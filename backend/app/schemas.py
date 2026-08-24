@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 Priority = Literal["Normal", "Medium", "High"]
 EcForm = Literal["Y", "N", "N/A"]
 ContractRequired = Literal["Y", "N", "N/A"]
-Currency = Literal["CAD", "USD", "CNY"]
+Currency = Literal["CAD", "USD", "CNY", "EUR"]
 
 
 class Actor(BaseModel):

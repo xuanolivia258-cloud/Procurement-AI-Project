@@ -7,7 +7,7 @@ export interface ProjectInput {
   bu: string;
   request_date: string;
   budget: string;
-  currency: '' | 'CAD' | 'USD' | 'CNY';
+  currency: '' | 'CAD' | 'USD' | 'CNY' | 'EUR';
   exchange_rate: string;
   usd_amount: string;
   exchange_rate_at: string;

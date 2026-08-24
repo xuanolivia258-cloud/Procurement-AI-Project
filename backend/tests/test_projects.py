@@ -109,7 +109,11 @@ def test_project_accepts_supported_currency(client):
     assert response.status_code == 201
     assert response.json()["currency"] == "CAD"
     assert response.json()["usd_amount"] == "92.59"
-    assert client.post("/api/projects", json={"currency": "EUR"}).status_code == 422
+    euro = client.post("/api/projects", json={"budget": "100.00", "currency": "EUR", "exchange_rate": "1.17"})
+    assert euro.status_code == 201
+    assert euro.json()["currency"] == "EUR"
+    assert euro.json()["usd_amount"] == "117.00"
+    assert client.post("/api/projects", json={"currency": "GBP"}).status_code == 422
 
 
 def test_ceg_can_be_reused_when_copying_a_project(client):
