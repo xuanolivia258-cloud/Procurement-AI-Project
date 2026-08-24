@@ -2,6 +2,7 @@ import io
 import json
 import math
 import re
+import time
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
@@ -27,6 +28,7 @@ from sqlalchemy.orm import Session
 from .auth import get_actor
 from .config import settings
 from .database import Base, SessionLocal, engine, get_db
+from .logging_config import log_access, log_operation, log_request_error
 from .models import Lifecycle, Project, ProjectAuditLog, ReferenceOption, utcnow
 from .schemas import (
     Actor, AuditLogRead, BulkProjectDeleteRequest, Currency, LifecycleRequest, PaginatedProjects, ProjectCreate,
@@ -40,6 +42,7 @@ async def lifespan(_app: FastAPI):
     Base.metadata.create_all(bind=engine)
     with SessionLocal() as db:
         seed_reference_options(db)
+    log_operation("service_start", "system", count=0, message=f"Backend service started; auth_mode={settings.auth_mode}.")
     yield
 
 
@@ -55,16 +58,19 @@ app.add_middleware(
 
 @app.middleware("http")
 async def request_id_middleware(request: Request, call_next):
+    started = time.perf_counter()
     request_id = request.headers.get("X-Request-ID", str(uuid4()))
     request.state.request_id = request_id
     response = await call_next(request)
     response.headers["X-Request-ID"] = request_id
+    log_access(request, response.status_code, (time.perf_counter() - started) * 1000)
     return response
 
 
 @app.exception_handler(HTTPException)
 async def http_error(request: Request, exc: HTTPException):
     detail = exc.detail if isinstance(exc.detail, dict) else {"message": str(exc.detail)}
+    log_request_error(request, exc.status_code, detail.get("code", "HTTP_ERROR"), detail.get("message", "Request failed."))
     return JSONResponse(status_code=exc.status_code, content={
         "error": {"code": detail.get("code", "HTTP_ERROR"), "message": detail.get("message", "Request failed."), **{key: value for key, value in detail.items() if key not in {"code", "message"}}},
         "request_id": getattr(request.state, "request_id", None),
@@ -74,8 +80,18 @@ async def http_error(request: Request, exc: HTTPException):
 @app.exception_handler(RequestValidationError)
 async def validation_error(request: Request, exc: RequestValidationError):
     fields = [{"field": ".".join(str(part) for part in item["loc"][1:]), "message": item["msg"]} for item in exc.errors()]
+    log_request_error(request, 422, "VALIDATION_ERROR", f"Request validation failed for {len(fields)} field(s).")
     return JSONResponse(status_code=422, content={
         "error": {"code": "VALIDATION_ERROR", "message": "Please check the submitted values.", "fields": fields},
+        "request_id": getattr(request.state, "request_id", None),
+    })
+
+
+@app.exception_handler(Exception)
+async def unhandled_error(request: Request, exc: Exception):
+    log_request_error(request, 500, type(exc).__name__, "Unhandled server error.", exc=exc)
+    return JSONResponse(status_code=500, content={
+        "error": {"code": "INTERNAL_SERVER_ERROR", "message": "An unexpected server error occurred."},
         "request_id": getattr(request.state, "request_id", None),
     })
 
@@ -276,13 +292,19 @@ def parse_exchange_rate_response(
 
 
 @app.get("/api/exchange-rate")
-def exchange_rate(currency: Currency, _actor: Actor = Depends(get_actor)):
+def exchange_rate(request: Request, currency: Currency, actor: Actor = Depends(get_actor)):
+    started = time.perf_counter()
     fetched_at = datetime.now(timezone.utc)
     if currency == "USD":
+        log_operation("exchange_rate_lookup", actor.id, count=0, duration_ms=(time.perf_counter() - started) * 1000,
+                      request_id=request.state.request_id, message="USD base exchange rate returned.")
         return {"currency": currency, "target_currency": "USD", "rate": "1.00000000", "fetched_at": fetched_at, "source": "USD base rate"}
     tenant_id = settings.exchange_rate_tenant_id.strip()
     rate_type = settings.exchange_rate_rate_type.strip()
     if not tenant_id or not rate_type:
+        log_operation("exchange_rate_lookup", actor.id, result="not_configured", count=0,
+                      duration_ms=(time.perf_counter() - started) * 1000, request_id=request.state.request_id,
+                      message=f"Exchange rate lookup failed; currency={currency}.")
         raise HTTPException(503, detail={
             "code": "EXCHANGE_RATE_NOT_CONFIGURED",
             "message": "Exchange rate service is not configured.",
@@ -309,10 +331,15 @@ def exchange_rate(currency: Currency, _actor: Actor = Depends(get_actor)):
         response.raise_for_status()
         rate, quoted_at = parse_exchange_rate_response(response.json(), currency, "USD", rate_type)
     except (httpx.HTTPError, ValueError) as exc:
+        log_operation("exchange_rate_lookup", actor.id, result=f"failed:{type(exc).__name__}", count=0,
+                      duration_ms=(time.perf_counter() - started) * 1000, request_id=request.state.request_id,
+                      message=f"Exchange rate lookup failed; currency={currency}.")
         raise HTTPException(502, detail={
             "code": "EXCHANGE_RATE_UNAVAILABLE",
             "message": "Exchange rate service is temporarily unavailable.",
         }) from exc
+    log_operation("exchange_rate_lookup", actor.id, count=0, duration_ms=(time.perf_counter() - started) * 1000,
+                  request_id=request.state.request_id, message=f"Exchange rate lookup succeeded; currency={currency}.")
     return {
         "currency": currency,
         "target_currency": "USD",
@@ -354,7 +381,7 @@ def get_project(project_id: int, db: Session = Depends(get_db), _actor: Actor = 
 
 
 @app.post("/api/projects", response_model=ProjectRead, status_code=201)
-def create_project(payload: ProjectCreate, db: Session = Depends(get_db), actor: Actor = Depends(get_actor)):
+def create_project(payload: ProjectCreate, request: Request, db: Session = Depends(get_db), actor: Actor = Depends(get_actor)):
     values = payload.model_dump()
     validate_reference_values(db, values)
     if values.get("po_release_date") is not None:
@@ -370,11 +397,12 @@ def create_project(payload: ProjectCreate, db: Session = Depends(get_db), actor:
         db.rollback()
         raise HTTPException(status_code=409, detail={"code": "CEG_CONFLICT", "message": "CEG already exists."}) from exc
     db.refresh(project)
+    log_operation("project_create", actor.id, project_id=project.id, ceg=project.ceg, request_id=request.state.request_id)
     return project_read(project)
 
 
 @app.put("/api/projects/{project_id}", response_model=ProjectRead)
-def update_project(project_id: int, payload: ProjectUpdate, db: Session = Depends(get_db), actor: Actor = Depends(get_actor)):
+def update_project(project_id: int, payload: ProjectUpdate, request: Request, db: Session = Depends(get_db), actor: Actor = Depends(get_actor)):
     project = db.get(Project, project_id)
     if not project or project.deleted_at is not None:
         raise HTTPException(404, detail={"code": "NOT_FOUND", "message": "Project not found."})
@@ -402,10 +430,11 @@ def update_project(project_id: int, payload: ProjectUpdate, db: Session = Depend
         commit_or_conflict(db)
         db.expire_all()
         project = db.get(Project, project_id)
+        log_operation("project_update", actor.id, project_id=project.id, ceg=project.ceg, request_id=request.state.request_id)
     return project_read(project)
 
 
-def change_lifecycle(project_id: int, target: Lifecycle, action: str, payload: LifecycleRequest, db: Session, actor: Actor):
+def change_lifecycle(project_id: int, target: Lifecycle, action: str, payload: LifecycleRequest, db: Session, actor: Actor, request_id: str):
     project = db.get(Project, project_id)
     if not project or project.deleted_at is not None:
         raise HTTPException(404, detail={"code": "NOT_FOUND", "message": "Project not found."})
@@ -427,21 +456,22 @@ def change_lifecycle(project_id: int, target: Lifecycle, action: str, payload: L
     db.commit()
     db.expire_all()
     project = db.get(Project, project_id)
+    log_operation(f"project_{action}", actor.id, project_id=project.id, ceg=project.ceg, request_id=request_id)
     return project_read(project)
 
 
 @app.post("/api/projects/{project_id}/complete", response_model=ProjectRead)
-def complete_project(project_id: int, payload: LifecycleRequest, db: Session = Depends(get_db), actor: Actor = Depends(get_actor)):
-    return change_lifecycle(project_id, Lifecycle.completed, "completed", payload, db, actor)
+def complete_project(project_id: int, payload: LifecycleRequest, request: Request, db: Session = Depends(get_db), actor: Actor = Depends(get_actor)):
+    return change_lifecycle(project_id, Lifecycle.completed, "completed", payload, db, actor, request.state.request_id)
 
 
 @app.post("/api/projects/{project_id}/reopen", response_model=ProjectRead)
-def reopen_project(project_id: int, payload: LifecycleRequest, db: Session = Depends(get_db), actor: Actor = Depends(get_actor)):
-    return change_lifecycle(project_id, Lifecycle.active, "reopened", payload, db, actor)
+def reopen_project(project_id: int, payload: LifecycleRequest, request: Request, db: Session = Depends(get_db), actor: Actor = Depends(get_actor)):
+    return change_lifecycle(project_id, Lifecycle.active, "reopened", payload, db, actor, request.state.request_id)
 
 
 @app.delete("/api/projects/{project_id}", status_code=204)
-def delete_project(project_id: int, version: int = Query(ge=1), db: Session = Depends(get_db), actor: Actor = Depends(get_actor)):
+def delete_project(project_id: int, request: Request, version: int = Query(ge=1), db: Session = Depends(get_db), actor: Actor = Depends(get_actor)):
     project = db.get(Project, project_id)
     if not project or project.deleted_at is not None:
         raise HTTPException(404, detail={"code": "NOT_FOUND", "message": "Project not found."})
@@ -455,11 +485,12 @@ def delete_project(project_id: int, version: int = Query(ge=1), db: Session = De
     project.updated_at = now
     add_audit(db, project, "trashed", {"deleted_at": {"before": None, "after": json_value(now)}}, actor)
     db.commit()
+    log_operation("project_trash", actor.id, project_id=project.id, ceg=project.ceg, request_id=request.state.request_id)
     return Response(status_code=204)
 
 
 @app.post("/api/projects/bulk-delete")
-def bulk_delete_projects(payload: BulkProjectDeleteRequest, db: Session = Depends(get_db), actor: Actor = Depends(get_actor)):
+def bulk_delete_projects(payload: BulkProjectDeleteRequest, request: Request, db: Session = Depends(get_db), actor: Actor = Depends(get_actor)):
     requested = {item.id: item.version for item in payload.projects}
     projects = list(db.scalars(select(Project).where(Project.id.in_(requested))))
     found = {project.id: project for project in projects}
@@ -476,6 +507,7 @@ def bulk_delete_projects(payload: BulkProjectDeleteRequest, db: Session = Depend
         project.updated_at = now
         add_audit(db, project, "trashed", {"deleted_at": {"before": None, "after": json_value(now)}}, actor)
     db.commit()
+    log_operation("project_bulk_trash", actor.id, count=len(projects), request_id=request.state.request_id)
     return {"deleted": len(projects)}
 
 
@@ -488,7 +520,7 @@ def list_recycle_bin(page: int = Query(1, ge=1), page_size: int = Query(25, ge=1
 
 
 @app.post("/api/recycle-bin/restore")
-def restore_projects(payload: BulkProjectDeleteRequest, db: Session = Depends(get_db), actor: Actor = Depends(get_actor)):
+def restore_projects(payload: BulkProjectDeleteRequest, request: Request, db: Session = Depends(get_db), actor: Actor = Depends(get_actor)):
     requested = {item.id: item.version for item in payload.projects}
     projects = list(db.scalars(select(Project).where(Project.id.in_(requested))))
     found = {project.id: project for project in projects}
@@ -506,11 +538,12 @@ def restore_projects(payload: BulkProjectDeleteRequest, db: Session = Depends(ge
         project.updated_at = now
         add_audit(db, project, "restored", {"deleted_at": {"before": json_value(before), "after": None}}, actor)
     db.commit()
+    log_operation("project_restore", actor.id, count=len(projects), request_id=request.state.request_id)
     return {"restored": len(projects)}
 
 
 @app.post("/api/recycle-bin/permanent-delete")
-def permanently_delete_projects(payload: BulkProjectDeleteRequest, db: Session = Depends(get_db), _actor: Actor = Depends(get_actor)):
+def permanently_delete_projects(payload: BulkProjectDeleteRequest, request: Request, db: Session = Depends(get_db), actor: Actor = Depends(get_actor)):
     requested = {item.id: item.version for item in payload.projects}
     projects = list(db.scalars(select(Project).where(Project.id.in_(requested))))
     found = {project.id: project for project in projects}
@@ -521,6 +554,7 @@ def permanently_delete_projects(payload: BulkProjectDeleteRequest, db: Session =
     for project in projects:
         db.delete(project)
     db.commit()
+    log_operation("project_permanent_delete", actor.id, count=len(projects), request_id=request.state.request_id)
     return {"deleted": len(projects)}
 
 
@@ -675,14 +709,16 @@ EXPORT_LABELS_ZH = {
 
 @app.get("/api/projects-export.xlsx")
 def export_projects(
+    request: Request,
     lifecycle: str | None = None, priority: str | None = None, ceg: str | None = None,
     keyword: str | None = None, procurement_status: str | None = None,
     bu: str | None = None, requestor: str | None = None,
     pr_approved_from: date | None = None, pr_approved_to: date | None = None,
     closing_from: date | None = None, closing_to: date | None = None, overdue: bool | None = None,
     language: str = "en",
-    db: Session = Depends(get_db), _actor: Actor = Depends(get_actor),
+    db: Session = Depends(get_db), actor: Actor = Depends(get_actor),
 ):
+    started = time.perf_counter()
     filters = query_projects(lifecycle, priority, ceg, keyword, procurement_status, bu, requestor, pr_approved_from, pr_approved_to, closing_from, closing_to, overdue)
     projects = db.scalars(select(Project).where(*filters).order_by(PRIORITY_ORDER.asc(), Project.updated_at.desc(), Project.id.desc())).all()
     workbook = Workbook()
@@ -810,4 +846,6 @@ def export_projects(
     output = io.BytesIO()
     workbook.save(output)
     output.seek(0)
+    log_operation("project_export", actor.id, count=len(projects), duration_ms=(time.perf_counter() - started) * 1000,
+                  request_id=request.state.request_id, message="Project Excel export generated.")
     return StreamingResponse(output, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=procurement-projects.xlsx"})

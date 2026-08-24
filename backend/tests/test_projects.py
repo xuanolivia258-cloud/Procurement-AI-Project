@@ -1,3 +1,38 @@
+from pathlib import Path
+
+from app.config import settings
+
+
+def test_backend_errors_are_logged_with_request_context(client):
+    response = client.get("/api/projects/not-a-number", headers={"X-Request-ID": "test-request-id"})
+    assert response.status_code == 422
+    log_text = Path(settings.error_log_file).read_text(encoding="utf-8")
+    assert "request_id=test-request-id" in log_text
+    assert "method=GET" in log_text
+    assert "path=/api/projects/not-a-number" in log_text
+    assert "status=422" in log_text
+    assert "error_type=VALIDATION_ERROR" in log_text
+
+
+def test_access_and_project_operations_are_logged(client):
+    response = client.post("/api/projects", json={"ceg": "LOGGED-PROJECT"}, headers={"X-Request-ID": "operation-log-test"})
+    assert response.status_code == 201
+
+    access_log = Path(settings.access_log_file).read_text(encoding="utf-8")
+    assert "request_id=operation-log-test" in access_log
+    assert "actor_id=local-test-user" in access_log
+    assert "method=POST" in access_log
+    assert "path=/api/projects" in access_log
+    assert "status=201" in access_log
+    assert "duration_ms=" in access_log
+
+    operation_log = Path(settings.operation_log_file).read_text(encoding="utf-8")
+    assert "request_id=operation-log-test" in operation_log
+    assert "action=project_create" in operation_log
+    assert f"project_id={response.json()['id']}" in operation_log
+    assert "ceg=LOGGED-PROJECT" in operation_log
+
+
 def test_empty_project_can_be_created(client):
     response = client.post("/api/projects", json={})
     assert response.status_code == 201

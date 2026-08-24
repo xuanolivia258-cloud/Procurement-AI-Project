@@ -14,6 +14,11 @@ class Settings(BaseSettings):
     exchange_rate_tenant_id: str = ""
     exchange_rate_rate_type: str = "SPOT"
     exchange_rate_timeout_seconds: float = 10.0
+    error_log_file: str = "data/logs/backend-errors.log"
+    access_log_file: str = "data/logs/backend-access.log"
+    operation_log_file: str = "data/logs/backend-operations.log"
+    error_log_max_bytes: int = 5_000_000
+    error_log_backup_count: int = 5
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

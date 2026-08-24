@@ -10,6 +10,11 @@ services:
       EXCHANGE_RATE_TENANT_ID: ${EXCHANGE_RATE_TENANT_ID:-}
       EXCHANGE_RATE_RATE_TYPE: ${EXCHANGE_RATE_RATE_TYPE:-SPOT}
       EXCHANGE_RATE_TIMEOUT_SECONDS: ${EXCHANGE_RATE_TIMEOUT_SECONDS:-10}
+      ERROR_LOG_FILE: ${ERROR_LOG_FILE:-/app/data/logs/backend-errors.log}
+      ACCESS_LOG_FILE: ${ACCESS_LOG_FILE:-/app/data/logs/backend-access.log}
+      OPERATION_LOG_FILE: ${OPERATION_LOG_FILE:-/app/data/logs/backend-operations.log}
+      ERROR_LOG_MAX_BYTES: ${ERROR_LOG_MAX_BYTES:-5000000}
+      ERROR_LOG_BACKUP_COUNT: ${ERROR_LOG_BACKUP_COUNT:-5}
     volumes:
       - procurement_data:/app/data
     ports:

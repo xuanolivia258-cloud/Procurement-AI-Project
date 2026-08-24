@@ -87,6 +87,22 @@ python scripts/backup.py
 
 For Docker, run the backup inside the backend container and copy the result out, or mount a backup directory. To restore, stop the backend, preserve the current database, replace `procurement.db` with a verified backup, and start the service again.
 
+## Backend logs
+
+Backend logs are persisted in the Docker data volume under `/app/data/logs`:
+
+- `backend-access.log`: request path, status, actor, request ID, and duration.
+- `backend-operations.log`: project operations, exchange-rate calls, exports, and service startup.
+- `backend-errors.log`: validation/HTTP failures and full stack traces for unexpected server errors.
+
+Each log rotates at 5 MB and keeps five history files. View recent entries with:
+
+```powershell
+docker compose exec backend sh -c "tail -n 50 /app/data/logs/backend-errors.log"
+docker compose exec backend sh -c "tail -n 50 /app/data/logs/backend-operations.log"
+docker compose exec backend sh -c "tail -n 50 /app/data/logs/backend-access.log"
+```
+
 ## SQLite operating boundary
 
 SQLite runs with WAL, foreign keys, and a 15-second busy timeout. This deployment uses one backend instance and is intended for a 10–50-person, read-heavy internal team. If the system later needs multiple backend replicas, high-frequency writes, or high availability, migrate the SQLAlchemy models to PostgreSQL.
