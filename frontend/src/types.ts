@@ -75,6 +75,24 @@ export interface DashboardData {
   total_budget: string;
   priority: Record<string, number>;
   procurement_status: Record<string, number>;
+  ceg_overview: { ceg: string; project_count: number; usd_amount: string }[];
+}
+
+export interface CegAnalysisItem {
+  ceg: string;
+  project_count: number;
+  usd_amount: string;
+  high_priority_count: number;
+  medium_priority_count: number;
+  normal_priority_count: number;
+  completed_count: number;
+  overdue_count: number;
+}
+
+export interface CegAnalysisData {
+  items: CegAnalysisItem[];
+  totals: { project_count: number; usd_amount: string; high_priority_count: number };
+  options: { ceg: string[]; bu: string[] };
 }
 
 export interface BudgetAnalysisData {

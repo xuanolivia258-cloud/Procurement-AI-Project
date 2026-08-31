@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, NavLink, Route, Routes, useSearchParams } from 'react-router-dom';
 import { api, ApiError, queryString } from './api';
-import type { AuditLog, BudgetAnalysisData, DashboardData, PaginatedProjects, Project, ProjectInput, ReferenceOption } from './types';
+import type { AuditLog, BudgetAnalysisData, CegAnalysisData, CegAnalysisItem, DashboardData, PaginatedProjects, Project, ProjectInput, ReferenceOption } from './types';
 
 const emptyProject: ProjectInput = {
   project_priority: '', ceg: '', requestor: '', bu: '', request_date: '', budget: '', currency: '', exchange_rate: '', usd_amount: '', exchange_rate_at: '', description: '',
@@ -11,18 +11,21 @@ const emptyProject: ProjectInput = {
   pr_approved_date: '', estimated_closing_date: '', contract_required: '', po_release_date: '',
 };
 
+const CEG_OPTIONS = ['Jessie Lin', 'Warren Joseph Litwin', 'Jerry Chang', 'Abby Ho', 'Yiwen Chen'];
+
 const copy = {
-  en: { dashboard: 'Dashboard', projects: 'Projects', settings: 'Options', recycleBin: 'Recycle Bin', create: 'Create Project', edit: 'Edit Project', save: 'Save', cancel: 'Cancel', export: 'Export Excel', all: 'All', filters: 'Filters', audit: 'Audit History', active: 'Active', completed: 'Completed', overdue: 'Overdue', totalBudget: 'Total Amount for Active', noProjects: 'No matching projects', conflict: 'This project changed elsewhere. Your entries are preserved; refresh before saving again.' },
-  zh: { dashboard: '仪表盘', projects: '项目', settings: '选项管理', recycleBin: '回收站', create: '新建项目', edit: '编辑项目', save: '保存', cancel: '取消', export: '导出 Excel', all: '全部', filters: '筛选', audit: '修改历史', active: '进行中', completed: '已完成', overdue: '已逾期', totalBudget: '进行中项目总金额', noProjects: '没有匹配的项目', conflict: '该项目已被其他用户修改。当前输入已保留，请刷新后重新保存。' },
+  en: { dashboard: 'Dashboard', projects: 'Projects', analysis: 'Analysis', settings: 'Options', recycleBin: 'Recycle Bin', create: 'Create Project', edit: 'Edit Project', save: 'Save', cancel: 'Cancel', export: 'Export Excel', all: 'All', filters: 'Filters', audit: 'Audit History', active: 'Active', completed: 'Completed', overdue: 'Overdue', totalBudget: 'Total Amount for Active', noProjects: 'No matching projects', conflict: 'This project changed elsewhere. Your entries are preserved; refresh before saving again.' },
+  zh: { dashboard: '仪表盘', projects: '项目', analysis: '分析', settings: '选项管理', recycleBin: '回收站', create: '新建项目', edit: '编辑项目', save: '保存', cancel: '取消', export: '导出 Excel', all: '全部', filters: '筛选', audit: '修改历史', active: '进行中', completed: '已完成', overdue: '已逾期', totalBudget: '进行中项目总金额', noProjects: '没有匹配的项目', conflict: '该项目已被其他用户修改。当前输入已保留，请刷新后重新保存。' },
 };
 
 type Language = keyof typeof copy;
 type Translation = { [K in keyof typeof copy.en]: string };
 
-function NavIcon({ name }: { name: 'dashboard' | 'projects' | 'options' | 'recycle' }) {
+function NavIcon({ name }: { name: 'dashboard' | 'projects' | 'analysis' | 'options' | 'recycle' }) {
   const common = { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, 'aria-hidden': true };
   if (name === 'dashboard') return <svg {...common}><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>;
   if (name === 'projects') return <svg {...common}><path d="M3 7.5h7l2 2h9v9.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7.5Z"/><path d="M3 7.5V5a2 2 0 0 1 2-2h4l2 2h4"/><path d="M8 14h8M8 17h6"/></svg>;
+  if (name === 'analysis') return <svg {...common}><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/><path d="m4 7 6-4 6 7 5-4"/></svg>;
   if (name === 'recycle') return <svg {...common}><path d="M4 7h16M9 3h6l1 4H8l1-4ZM6.5 7l.8 14h9.4l.8-14M10 11v6M14 11v6"/></svg>;
   return <svg {...common}><path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h8M16 18h4"/><circle cx="16" cy="6" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="14" cy="18" r="2"/></svg>;
 }
@@ -42,8 +45,8 @@ function Layout({ language, setLanguage }: { language: Language; setLanguage: (v
       <nav>
         <NavLink to="/" title={t.dashboard}><NavIcon name="dashboard"/><span>{t.dashboard}</span></NavLink>
         <NavLink to="/projects" title={t.projects}><NavIcon name="projects"/><span>{t.projects}</span></NavLink>
+        <NavLink to="/analysis" title={t.analysis}><NavIcon name="analysis"/><span>{t.analysis}</span></NavLink>
         <NavLink to="/recycle-bin" title={t.recycleBin}><NavIcon name="recycle"/><span>{t.recycleBin}</span></NavLink>
-        <NavLink to="/settings" title={t.settings}><NavIcon name="options"/><span>{t.settings}</span></NavLink>
       </nav>
       <div className="local-user"><span>LT</span><div>Local Test User<small>Administrator</small></div></div>
     </aside>
@@ -52,6 +55,7 @@ function Layout({ language, setLanguage }: { language: Language; setLanguage: (v
       <Routes>
         <Route path="/" element={<Dashboard language={language} />} />
         <Route path="/projects" element={<Projects language={language} />} />
+        <Route path="/analysis" element={<Analysis language={language} />} />
         <Route path="/budget-analysis" element={<BudgetAnalysis />} />
         <Route path="/recycle-bin" element={<RecycleBin language={language} />} />
         <Route path="/settings" element={<Options language={language} />} />
@@ -65,7 +69,6 @@ function Dashboard({ language }: { language: Language }) {
   const { data, isLoading, error } = useQuery({ queryKey: ['dashboard'], queryFn: () => api<DashboardData>('/api/dashboard') });
   if (isLoading) return <Loading />;
   if (error || !data) return <ErrorBox error={error} />;
-  const maxPriority = Math.max(1, ...Object.values(data.priority));
   return <section className="page dashboard-page">
     <div className="page-heading"><div><p className="eyebrow">PROJECT OVERVIEW</p><h1>{t.dashboard}</h1></div></div>
     <div className="metric-grid">
@@ -75,9 +78,43 @@ function Dashboard({ language }: { language: Language }) {
       <Metric label={t.totalBudget} value={`USD ${Number(data.total_budget).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} tone="blue" wide to="/budget-analysis" />
     </div>
     <div className="dashboard-grid">
-      <article className="panel"><h2>Priority distribution</h2>{['High', 'Medium', 'Normal'].map((item) => <div className="bar-row" key={item}><span>{item}</span><div><i style={{ width: `${((data.priority[item] || 0) / maxPriority) * 100}%` }} /></div><b>{data.priority[item] || 0}</b></div>)}</article>
+      <CegOverviewChart items={data.ceg_overview}/>
     </div>
   </section>;
+}
+
+function CegOverviewChart({ items }: { items: DashboardData['ceg_overview'] }) {
+  const totalProjects = items.reduce((sum, item) => sum + item.project_count, 0);
+  const totalAmount = items.reduce((sum, item) => sum + Number(item.usd_amount), 0);
+  return <article className="panel ceg-preview"><header><div><h2>CEG Overview</h2><p>All active and completed projects</p></div><Link to="/analysis">View Full Analysis →</Link></header>{items.length ? <div className="ceg-pies"><CegDonut title="Project Count" items={items} values={items.map((item) => item.project_count)} centerValue={String(totalProjects)} centerLabel="Total Projects"/><CegDonut title="USD Amount" items={items} values={items.map((item) => Number(item.usd_amount))} centerValue={`USD ${formatCompactNumber(totalAmount)}`} centerLabel="Total Amount"/></div> : <div className="analysis-empty compact">No CEG data available.</div>}</article>;
+}
+
+function cegColor(index: number) { return `hsl(${Math.round((index * 137.508 + 214) % 360)} 68% ${index % 3 === 0 ? 48 : index % 3 === 1 ? 56 : 42}%)`; }
+
+function CegDonut({ title, items, values, centerValue, centerLabel }: { title: string; items: DashboardData['ceg_overview']; values: number[]; centerValue: string; centerLabel: string }) {
+  const entries = items.map((item, index) => ({ item, value: values[index], color: cegColor(index) })).filter((entry) => entry.value > 0);
+  const total = entries.reduce((sum, entry) => sum + entry.value, 0);
+  let angle = -90;
+  const slices = entries.map((entry) => { const start = angle; const end = angle + entry.value / total * 360; angle = end; return { ...entry, start, end, mid: (start + end) / 2 }; });
+  const labels = layoutDonutLabels(slices);
+  return <div className="ceg-pie-card"><h3>{title}</h3><svg className="ceg-donut-svg" viewBox="0 0 440 320" role="img" aria-label={`${title} by CEG. ${centerLabel} ${centerValue}`}>
+    {total <= 0 ? <circle cx="220" cy="155" r="87" fill="none" stroke="#ededf0" strokeWidth="44"/> : slices.length === 1 ? <circle cx="220" cy="155" r="87" fill="none" stroke={slices[0].color} strokeWidth="44"><title>{`${slices[0].item.ceg}: ${formatAmount(slices[0].value)}`}</title></circle> : slices.map((slice) => <path key={slice.item.ceg} d={donutPath(220, 155, 109, 65, slice.start, slice.end)} fill={slice.color} stroke="#fff" strokeWidth="2"><title>{`${slice.item.ceg}: ${formatAmount(slice.value)}`}</title></path>)}
+    {labels.map((label) => <g key={label.item.ceg}><polyline points={`${label.x1},${label.y1} ${label.x2},${label.y2} ${label.x3},${label.y3}`} fill="none" stroke={label.color} strokeWidth="1.5"/><circle cx={label.x1} cy={label.y1} r="3" fill={label.color}/><text x={label.textX} y={label.y3 + 3} textAnchor={label.anchor} className="ceg-callout-label">{label.item.ceg}</text></g>)}
+    <circle cx="220" cy="155" r="62" fill="#fff"/><text x="220" y="151" textAnchor="middle" className="ceg-donut-total">{centerValue}</text><text x="220" y="170" textAnchor="middle" className="ceg-donut-caption">{centerLabel}</text>
+  </svg></div>;
+}
+
+function layoutDonutLabels<T extends { item: DashboardData['ceg_overview'][number]; color: string; mid: number }>(slices: T[]) {
+  const positioned = slices.map((slice) => { const radians = slice.mid * Math.PI / 180; const right = Math.cos(radians) >= 0; return { ...slice, right, x1: 220 + Math.cos(radians) * 111, y1: 155 + Math.sin(radians) * 111, x2: 220 + Math.cos(radians) * 129, y2: 155 + Math.sin(radians) * 129, y3: 155 + Math.sin(radians) * 142 }; });
+  for (const right of [false, true]) { const side = positioned.filter((item) => item.right === right).sort((a, b) => a.y3 - b.y3); side.forEach((item, index) => { item.y3 = Math.max(18 + index * 18, item.y3, index ? side[index - 1].y3 + 18 : 18); }); if (side.length && side[side.length - 1].y3 > 296) { const shift = side[side.length - 1].y3 - 296; side.forEach((item) => { item.y3 -= shift; }); } }
+  return positioned.map((item) => ({ ...item, x3: item.right ? 350 : 90, textX: item.right ? 355 : 85, anchor: item.right ? 'start' as const : 'end' as const }));
+}
+
+function donutPath(cx: number, cy: number, outer: number, inner: number, start: number, end: number) {
+  const point = (radius: number, degrees: number) => { const radians = degrees * Math.PI / 180; return [cx + radius * Math.cos(radians), cy + radius * Math.sin(radians)]; };
+  const [x1, y1] = point(outer, start), [x2, y2] = point(outer, end), [x3, y3] = point(inner, end), [x4, y4] = point(inner, start);
+  const large = end - start > 180 ? 1 : 0;
+  return `M ${x1} ${y1} A ${outer} ${outer} 0 ${large} 1 ${x2} ${y2} L ${x3} ${y3} A ${inner} ${inner} 0 ${large} 0 ${x4} ${y4} Z`;
 }
 
 function Metric({ label, value, tone, wide = false, to }: { label: string; value: string | number; tone: string; wide?: boolean; to?: string }) {
@@ -86,6 +123,49 @@ function Metric({ label, value, tone, wide = false, to }: { label: string; value
     ? <Link className={`metric metric-link ${tone} ${wide ? 'wide' : ''}`} to={to} aria-label={`${label}: ${value}. View projects`}>{content}</Link>
     : <article className={`metric ${tone} ${wide ? 'wide' : ''}`}>{content}</article>;
 }
+
+function Analysis({ language }: { language: Language }) {
+  const t = copy[language];
+  const [filters, setFilters] = useState({ from_month: '', to_month: '', ceg: '', lifecycle: '', priority: '' });
+  const validRange = !filters.from_month || !filters.to_month || filters.from_month <= filters.to_month;
+  const query = queryString(filters);
+  const { data, isLoading, error } = useQuery({ queryKey: ['ceg-analysis', filters], queryFn: () => api<CegAnalysisData>(`/api/ceg-analysis?${query}`), enabled: validRange });
+  const update = (key: keyof typeof filters, value: string) => setFilters((current) => ({ ...current, [key]: value }));
+  return <section className="page analysis-page">
+    <div className="page-heading"><div><p className="eyebrow">PORTFOLIO INTELLIGENCE</p><h1>{t.analysis}</h1><p>Compare project volume, USD amount, and priority mix across CEGs.</p></div></div>
+    <div className="analysis-filters panel">
+      <label>From Month<input type="month" value={filters.from_month} onChange={(event) => update('from_month', event.target.value)} /></label>
+      <label>To Month<input type="month" value={filters.to_month} onChange={(event) => update('to_month', event.target.value)} /></label>
+      <label>CEG<select value={filters.ceg} onChange={(event) => update('ceg', event.target.value)}><option value="">{t.all}</option>{data?.options.ceg.map((value) => <option key={value}>{value}</option>)}</select></label>
+      <label>Lifecycle<select value={filters.lifecycle} onChange={(event) => update('lifecycle', event.target.value)}><option value="">{t.all}</option><option value="active">{t.active}</option><option value="completed">{t.completed}</option></select></label>
+      <label>Priority<select value={filters.priority} onChange={(event) => update('priority', event.target.value)}><option value="">{t.all}</option><option>High</option><option>Medium</option><option>Normal</option></select></label>
+      <button className="button secondary analysis-clear" type="button" onClick={() => setFilters({ from_month: '', to_month: '', ceg: '', lifecycle: '', priority: '' })}>Clear Filters</button>
+    </div>
+    {!validRange ? <div className="error-box">From Month cannot be later than To Month.</div> : isLoading ? <Loading /> : error ? <ErrorBox error={error} /> : data && <>
+      <div className="analysis-metrics"><article><span>Total Projects</span><strong>{data.totals.project_count}</strong></article><article><span>Total USD Amount</span><strong>USD {formatAmount(data.totals.usd_amount)}</strong></article><article><span>High Priority Projects</span><strong>{data.totals.high_priority_count}</strong></article></div>
+      <div className="analysis-chart-grid"><CegValueChart items={data.items} mode="count"/><CegValueChart items={data.items} mode="amount"/></div>
+      <PriorityMixChart items={data.items}/>
+    </>}
+  </section>;
+}
+
+function CegValueChart({ items, mode }: { items: CegAnalysisItem[]; mode: 'count' | 'amount' }) {
+  const shown = [...items].sort((left, right) => {
+    const leftValue = mode === 'count' ? left.project_count : Number(left.usd_amount);
+    const rightValue = mode === 'count' ? right.project_count : Number(right.usd_amount);
+    return rightValue - leftValue || left.ceg.localeCompare(right.ceg);
+  }).slice(0, 12);
+  const values = shown.map((item) => mode === 'count' ? item.project_count : Number(item.usd_amount));
+  const max = Math.max(1, ...values);
+  return <article className="panel ceg-chart"><header><h2>{mode === 'count' ? 'Projects by CEG' : 'USD Amount by CEG'}</h2><p>{items.length > 12 ? 'Top 12 CEGs shown' : 'Current filtered portfolio'}</p></header>{!shown.length ? <div className="analysis-empty">No matching CEG data.</div> : <div className="horizontal-bars">{shown.map((item, index) => { const value = values[index]; return <div className="horizontal-bar" key={item.ceg}><span title={item.ceg}>{item.ceg}</span><div><i style={{ width: `${(value / max) * 100}%` }}/></div><strong>{mode === 'count' ? value : `USD ${formatCompactNumber(value)}`}</strong></div>; })}</div>}</article>;
+}
+
+function PriorityMixChart({ items }: { items: CegAnalysisItem[] }) {
+  return <article className="panel priority-mix"><header><div><h2>Priority Mix by CEG</h2><p>High, Medium, and Normal projects</p></div><div className="priority-legend"><span className="high">High</span><span className="medium">Medium</span><span className="normal">Normal</span></div></header>{!items.length ? <div className="analysis-empty">No matching priority data.</div> : <div className="priority-stack-list">{items.slice(0, 15).map((item) => { const total = item.high_priority_count + item.medium_priority_count + item.normal_priority_count; return <div className="priority-stack-row" key={item.ceg}><span title={item.ceg}>{item.ceg}</span><div>{total > 0 && <><i className="high" style={{ width: `${item.high_priority_count / total * 100}%` }} title={`High: ${item.high_priority_count}`}>{item.high_priority_count > 0 && <small>{item.high_priority_count}</small>}</i><i className="medium" style={{ width: `${item.medium_priority_count / total * 100}%` }} title={`Medium: ${item.medium_priority_count}`}>{item.medium_priority_count > 0 && <small>{item.medium_priority_count}</small>}</i><i className="normal" style={{ width: `${item.normal_priority_count / total * 100}%` }} title={`Normal: ${item.normal_priority_count}`}>{item.normal_priority_count > 0 && <small>{item.normal_priority_count}</small>}</i></>}</div></div>; })}</div>}</article>;
+}
+
+function formatAmount(value: string | number) { return Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function formatCompactNumber(value: number) { if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`; if (value >= 1_000) return `${(value / 1_000).toFixed(0)}K`; return formatAmount(value); }
 
 function BudgetAnalysis() {
   const now = new Date();
@@ -99,7 +179,7 @@ function BudgetAnalysis() {
     <div className="page-heading"><div><p className="eyebrow">FINANCIAL OVERVIEW</p><h1>Total Amount for Active</h1><p>Monthly USD Amount for active projects, grouped by PR Approved Date.</p></div></div>
     <div className="budget-month-filters panel"><label>From Month<input type="month" value={fromMonth} onChange={(event) => setFromMonth(event.target.value)} /></label><label>To Month<input type="month" value={toMonth} onChange={(event) => setToMonth(event.target.value)} /></label></div>
     {!validRange ? <div className="error-box">From Month cannot be later than To Month.</div> : isLoading ? <Loading /> : error ? <ErrorBox error={error} /> : data && <>
-      <div className="budget-summary"><article><span>Active Project USD Amount</span><strong>USD {Number(data.total_usd_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></article><article><span>Active Projects with PR Approval</span><strong>{data.project_count}</strong></article></div>
+      <div className="budget-summary"><article><span>Active Project USD Amount</span><strong>USD {Number(data.total_usd_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></article></div>
       <MonthlyBudgetChart data={data.monthly} title="Monthly USD Amount" />
     </>}
   </section>;
@@ -245,6 +325,7 @@ function ProjectDialog({ project, copyMode = false, language, close }: { project
   const { register, handleSubmit, setValue, watch, formState: { isDirty } } = useForm<ProjectInput>({ defaultValues: defaults });
   const currency = watch('currency');
   const budget = watch('budget');
+  const ceg = watch('ceg');
   const procurementStatus = watch('procurement_status');
   const prApprovedDate = watch('pr_approved_date');
   const estimatedClosingDate = watch('estimated_closing_date');
@@ -278,7 +359,7 @@ function ProjectDialog({ project, copyMode = false, language, close }: { project
     <form onSubmit={handleSubmit((values) => mutation.mutate(values))}><div className="form-sections">
       <section className="form-section"><SectionHeading number="01" title="Project Basics" description="Ownership, priority and request context" /><div className="form-grid">
         <Field label="Priority"><select {...register('project_priority')}><option value="">Select</option><option>High</option><option>Medium</option><option>Normal</option></select></Field>
-        <Field label="CEG"><input {...register('ceg')} onBlur={capitalizeOnBlur('ceg')} /></Field><Field label="BU"><input {...register('bu')} onBlur={capitalizeOnBlur('bu')} /></Field><Field label="BU Requestor"><input {...register('requestor')} onBlur={capitalizeOnBlur('requestor')} /></Field>
+        <Field label="CEG"><select {...register('ceg')}><option value="">Select</option>{ceg && !CEG_OPTIONS.includes(ceg) && <option value={ceg}>{ceg} (Existing)</option>}{CEG_OPTIONS.map((name) => <option key={name} value={name}>{name}</option>)}</select></Field><Field label="BU"><input {...register('bu')} onBlur={capitalizeOnBlur('bu')} /></Field><Field label="BU Requestor"><input {...register('requestor')} onBlur={capitalizeOnBlur('requestor')} /></Field>
         <Field label="Request Date"><input type="date" {...register('request_date')} /></Field><Field label="Description" wide><textarea rows={4} {...register('description')} onBlur={capitalizeOnBlur('description')} /></Field>
       </div></section>
       <section className="form-section financial-section"><SectionHeading number="02" title="Budget" description="Original budget and live USD conversion" /><div className="form-grid">

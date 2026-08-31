@@ -230,16 +230,19 @@ def commit_or_conflict(db: Session, ceg_message: str = "CEG already exists."):
 
 
 def seed_reference_options(db: Session):
-    if db.scalar(select(func.count()).select_from(ReferenceOption)):
-        return
     defaults = {
         "supplier_type": [("Payment Only", "仅付款"), ("Simplified", "简化采购"), ("Sporadic", "零星采购"), ("Official", "正式供应商")],
         "procurement_strategy": [("Negotiation", "谈判"), ("Cost Comparison", "比价"), ("Bidding", "招标")],
-        "procurement_status": [("Sourcing", "寻源"), ("Qualification", "资质审核"), ("Supplier Selection", "供应商选择"), ("Contract Review", "合同审核"), ("PO Release", "采购订单发布")],
+        "procurement_status": [("Sourcing", "寻源"), ("Qualification", "资质审核"), ("Supplier Selection", "供应商选择"), ("Contract Review", "合同审核"), ("PO Release", "采购订单发布"), ("Others", "其他")],
     }
     for category, values in defaults.items():
         for index, (value, label_zh) in enumerate(values):
-            db.add(ReferenceOption(category=category, code=value, label_en=value, label_zh=label_zh, sort_order=index))
+            exists = db.scalar(select(ReferenceOption.id).where(
+                ReferenceOption.category == category,
+                ReferenceOption.code == value,
+            ))
+            if not exists:
+                db.add(ReferenceOption(category=category, code=value, label_en=value, label_zh=label_zh, sort_order=index))
     db.commit()
 
 
@@ -633,7 +636,16 @@ def dashboard(db: Session = Depends(get_db), _actor: Actor = Depends(get_actor))
     total_budget = db.scalar(select(func.coalesce(func.sum(Project.usd_amount), 0)).where(
         active_filter, Project.lifecycle == Lifecycle.active.value,
     )) or 0
-    return {"lifecycle": lifecycle_counts, "overdue": overdue, "total_budget": str(total_budget), "priority": priority_counts, "procurement_status": status_counts}
+    ceg_name = func.coalesce(func.nullif(Project.ceg, ""), "Unassigned")
+    ceg_amount = func.coalesce(func.sum(Project.usd_amount), 0)
+    ceg_overview_rows = db.execute(
+        select(ceg_name, func.count(), ceg_amount)
+        .where(active_filter)
+        .group_by(ceg_name)
+        .order_by(ceg_amount.desc(), func.count().desc())
+    ).all()
+    ceg_overview = [{"ceg": ceg, "project_count": count, "usd_amount": str(amount)} for ceg, count, amount in ceg_overview_rows]
+    return {"lifecycle": lifecycle_counts, "overdue": overdue, "total_budget": str(total_budget), "priority": priority_counts, "procurement_status": status_counts, "ceg_overview": ceg_overview}
 
 
 def parse_month(value: str | None, end: bool = False) -> date | None:
@@ -646,6 +658,71 @@ def parse_month(value: str | None, end: bool = False) -> date | None:
         next_month = date(year + (month == 12), 1 if month == 12 else month + 1, 1)
         return next_month - timedelta(days=1)
     return date(year, month, 1)
+
+
+@app.get("/api/ceg-analysis")
+def ceg_analysis(
+    from_month: str | None = None, to_month: str | None = None,
+    ceg: str | None = None, lifecycle: str | None = None,
+    priority: str | None = None, bu: str | None = None,
+    db: Session = Depends(get_db), _actor: Actor = Depends(get_actor),
+):
+    start = parse_month(from_month)
+    end = parse_month(to_month, end=True)
+    if start and end and start > end:
+        raise HTTPException(422, detail={"code": "INVALID_MONTH_RANGE", "message": "From Month cannot be later than To Month."})
+    if lifecycle and lifecycle not in {Lifecycle.active.value, Lifecycle.completed.value}:
+        raise HTTPException(422, detail={"code": "INVALID_LIFECYCLE", "message": "Lifecycle must be active or completed."})
+    if priority and priority not in {"High", "Medium", "Normal"}:
+        raise HTTPException(422, detail={"code": "INVALID_PRIORITY", "message": "Priority must be High, Medium, or Normal."})
+
+    filters = [Project.deleted_at.is_(None)]
+    if start:
+        filters.append(Project.pr_approved_date >= start)
+    if end:
+        filters.append(Project.pr_approved_date <= end)
+    if ceg:
+        filters.append(Project.ceg == ceg)
+    if lifecycle:
+        filters.append(Project.lifecycle == lifecycle)
+    if priority:
+        filters.append(Project.project_priority == priority)
+    if bu:
+        filters.append(Project.bu == bu)
+
+    today = date.today()
+    rows = db.execute(select(
+        Project.ceg,
+        func.count(),
+        func.coalesce(func.sum(Project.usd_amount), 0),
+        func.sum(case((Project.project_priority == "High", 1), else_=0)),
+        func.sum(case((Project.project_priority == "Medium", 1), else_=0)),
+        func.sum(case((Project.project_priority == "Normal", 1), else_=0)),
+        func.sum(case((Project.lifecycle == Lifecycle.completed.value, 1), else_=0)),
+        func.sum(case((
+            (Project.lifecycle == Lifecycle.active.value)
+            & Project.estimated_closing_date.is_not(None)
+            & (Project.estimated_closing_date < today), 1), else_=0)),
+    ).where(*filters).group_by(Project.ceg).order_by(func.coalesce(func.sum(Project.usd_amount), 0).desc(), func.count().desc())).all()
+
+    items = [{
+        "ceg": row[0] or "Unassigned", "project_count": row[1], "usd_amount": str(row[2]),
+        "high_priority_count": row[3] or 0, "medium_priority_count": row[4] or 0,
+        "normal_priority_count": row[5] or 0, "completed_count": row[6] or 0,
+        "overdue_count": row[7] or 0,
+    } for row in rows]
+    option_filters = [Project.deleted_at.is_(None)]
+    ceg_options = list(db.scalars(select(Project.ceg).where(*option_filters, Project.ceg.is_not(None), Project.ceg != "").distinct().order_by(Project.ceg)))
+    bu_options = list(db.scalars(select(Project.bu).where(*option_filters, Project.bu.is_not(None), Project.bu != "").distinct().order_by(Project.bu)))
+    return {
+        "items": items,
+        "totals": {
+            "project_count": sum(item["project_count"] for item in items),
+            "usd_amount": str(sum((Decimal(item["usd_amount"]) for item in items), Decimal("0"))),
+            "high_priority_count": sum(item["high_priority_count"] for item in items),
+        },
+        "options": {"ceg": ceg_options, "bu": bu_options},
+    }
 
 
 @app.get("/api/budget-analysis")

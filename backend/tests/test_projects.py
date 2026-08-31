@@ -245,6 +245,9 @@ def test_dashboard_total_budget_sums_project_usd_amounts(client):
     dashboard = client.get("/api/dashboard").json()
 
     assert dashboard["total_budget"] == "210.75"
+    overview = {item["ceg"]: item for item in dashboard["ceg_overview"]}
+    assert overview["CAD-1"] == {"ceg": "CAD-1", "project_count": 1, "usd_amount": "72.50"}
+    assert overview["COMPLETED-USD"] == {"ceg": "COMPLETED-USD", "project_count": 1, "usd_amount": "500.00"}
 
 
 def test_budget_analysis_groups_usd_amount_by_pr_approved_month(client):
@@ -259,3 +262,37 @@ def test_budget_analysis_groups_usd_amount_by_pr_approved_month(client):
         {"month": "2026-03", "usd_amount": "50.00", "project_count": 1},
     ]
     assert result["total_usd_amount"] == "150.25"
+
+
+def test_ceg_analysis_summarizes_amount_priority_and_filters(client):
+    client.post("/api/projects", json={
+        "ceg": "CEG-A", "bu": "Finance", "project_priority": "High",
+        "pr_approved_date": "2026-01-15", "budget": "100.00", "currency": "USD", "exchange_rate": "1",
+        "estimated_closing_date": "2020-01-01",
+    })
+    client.post("/api/projects", json={
+        "ceg": "CEG-A", "bu": "Finance", "project_priority": "Medium",
+        "pr_approved_date": "2026-02-10", "budget": "50.00", "currency": "USD", "exchange_rate": "1",
+        "po_release_date": "2026-02-20",
+    })
+    client.post("/api/projects", json={
+        "ceg": "CEG-B", "bu": "IT", "project_priority": "High",
+        "pr_approved_date": "2026-03-01", "budget": "25.00", "currency": "USD", "exchange_rate": "1",
+    })
+
+    result = client.get("/api/ceg-analysis?from_month=2026-01&to_month=2026-02&ceg=CEG-A").json()
+
+    assert result["totals"] == {"project_count": 2, "usd_amount": "150.00", "high_priority_count": 1}
+    assert result["items"] == [{
+        "ceg": "CEG-A", "project_count": 2, "usd_amount": "150.00",
+        "high_priority_count": 1, "medium_priority_count": 1, "normal_priority_count": 0,
+        "completed_count": 1, "overdue_count": 1,
+    }]
+    assert result["options"]["ceg"] == ["CEG-A", "CEG-B"]
+    assert result["options"]["bu"] == ["Finance", "IT"]
+
+
+def test_ceg_analysis_rejects_invalid_month_range(client):
+    response = client.get("/api/ceg-analysis?from_month=2026-03&to_month=2026-02")
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "INVALID_MONTH_RANGE"
