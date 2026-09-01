@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, NavLink, Route, Routes, useSearchParams } from 'react-router-dom';
+import { Link, NavLink, Route, Routes, useLocation, useSearchParams } from 'react-router-dom';
 import { api, ApiError, queryString } from './api';
 import type { AuditLog, BudgetAnalysisData, CegAnalysisData, CegAnalysisItem, DashboardData, PaginatedProjects, Project, ProjectInput, ReferenceOption } from './types';
 
@@ -30,21 +30,28 @@ function NavIcon({ name }: { name: 'dashboard' | 'projects' | 'analysis' | 'opti
   return <svg {...common}><path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h8M16 18h4"/><circle cx="16" cy="6" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="14" cy="18" r="2"/></svg>;
 }
 
+function ProjectNavigation({ t }: { t: Translation }) {
+  const location = useLocation();
+  const params = new URLSearchParams(location.search);
+  const onProjects = location.pathname === '/projects';
+  const overdue = onProjects && params.get('overdue') === 'true';
+  const completed = onProjects && !overdue && params.get('lifecycle') === 'completed';
+  const active = onProjects && !overdue && !completed;
+  return <div className="project-nav-group"><NavLink to="/projects" title={t.projects} aria-expanded={onProjects}><NavIcon name="projects"/><span>{t.projects}</span><b className="project-nav-chevron" aria-hidden="true">⌄</b></NavLink><div className="project-subnav"><Link title={t.active} aria-label={t.active} className={`active-projects${active ? ' active' : ''}`} to="/projects?lifecycle=active" aria-current={active ? 'page' : undefined}><i/>{t.active}</Link><Link title={t.completed} aria-label={t.completed} className={`completed-projects${completed ? ' active' : ''}`} to="/projects?lifecycle=completed" aria-current={completed ? 'page' : undefined}><i/>{t.completed}</Link><Link title={t.overdue} aria-label={t.overdue} className={`overdue-projects${overdue ? ' active' : ''}`} to="/projects?lifecycle=active&overdue=true" aria-current={overdue ? 'page' : undefined}><i/>{t.overdue}</Link></div></div>;
+}
+
 export function toPayload(values: ProjectInput) {
   return Object.fromEntries(Object.entries(values).map(([key, value]) => [key, value === '' ? null : value]));
 }
 
 function Layout({ language, setLanguage }: { language: Language; setLanguage: (value: Language) => void }) {
   const t = copy[language];
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('sidebar-collapsed') === 'true');
-  useEffect(() => localStorage.setItem('sidebar-collapsed', String(sidebarCollapsed)), [sidebarCollapsed]);
-  return <div className={`app-shell${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
+  return <div className="app-shell">
     <aside className="sidebar">
-      <button type="button" className="sidebar-toggle" onClick={() => setSidebarCollapsed((current) => !current)} aria-label={sidebarCollapsed ? 'Expand navigation' : 'Collapse navigation'} aria-expanded={!sidebarCollapsed} title={sidebarCollapsed ? 'Expand navigation' : 'Collapse navigation'}>{sidebarCollapsed ? '›' : '‹'}</button>
       <div className="brand"><span className="brand-mark" role="img" aria-label="Maple leaf">🍁︎</span><span>CARI<br/><small>Procurement Tracking</small></span></div>
       <nav>
         <NavLink to="/" title={t.dashboard}><NavIcon name="dashboard"/><span>{t.dashboard}</span></NavLink>
-        <NavLink to="/projects" title={t.projects}><NavIcon name="projects"/><span>{t.projects}</span></NavLink>
+        <ProjectNavigation t={t}/>
         <NavLink to="/analysis" title={t.analysis}><NavIcon name="analysis"/><span>{t.analysis}</span></NavLink>
         <NavLink to="/recycle-bin" title={t.recycleBin}><NavIcon name="recycle"/><span>{t.recycleBin}</span></NavLink>
       </nav>
@@ -66,11 +73,12 @@ function Layout({ language, setLanguage }: { language: Language; setLanguage: (v
 
 function Dashboard({ language }: { language: Language }) {
   const t = copy[language];
+  const [creatingProject, setCreatingProject] = useState(false);
   const { data, isLoading, error } = useQuery({ queryKey: ['dashboard'], queryFn: () => api<DashboardData>('/api/dashboard') });
   if (isLoading) return <Loading />;
   if (error || !data) return <ErrorBox error={error} />;
   return <section className="page dashboard-page">
-    <div className="page-heading"><div><p className="eyebrow">PROJECT OVERVIEW</p><h1>{t.dashboard}</h1></div></div>
+    <div className="page-heading"><div><p className="eyebrow">PROJECT OVERVIEW</p><h1>{t.dashboard}</h1></div><div className="heading-actions"><button className="button primary" type="button" onClick={() => setCreatingProject(true)}>＋ {t.create}</button></div></div>
     <div className="metric-grid">
       <Metric label={t.active} value={data.lifecycle.active || 0} tone="purple" to="/projects?lifecycle=active" />
       <Metric label={t.completed} value={data.lifecycle.completed || 0} tone="green" to="/projects?lifecycle=completed" />
@@ -80,6 +88,7 @@ function Dashboard({ language }: { language: Language }) {
     <div className="dashboard-grid">
       <CegOverviewChart items={data.ceg_overview}/>
     </div>
+    {creatingProject && <ProjectDialog project={null} language={language} close={() => setCreatingProject(false)} />}
   </section>;
 }
 
@@ -126,13 +135,14 @@ function Metric({ label, value, tone, wide = false, to }: { label: string; value
 
 function Analysis({ language }: { language: Language }) {
   const t = copy[language];
+  const [reportOpen, setReportOpen] = useState(false);
   const [filters, setFilters] = useState({ from_month: '', to_month: '', ceg: '', lifecycle: '', priority: '' });
   const validRange = !filters.from_month || !filters.to_month || filters.from_month <= filters.to_month;
   const query = queryString(filters);
   const { data, isLoading, error } = useQuery({ queryKey: ['ceg-analysis', filters], queryFn: () => api<CegAnalysisData>(`/api/ceg-analysis?${query}`), enabled: validRange });
   const update = (key: keyof typeof filters, value: string) => setFilters((current) => ({ ...current, [key]: value }));
   return <section className="page analysis-page">
-    <div className="page-heading"><div><p className="eyebrow">PORTFOLIO INTELLIGENCE</p><h1>{t.analysis}</h1><p>Compare project volume, USD amount, and priority mix across CEGs.</p></div></div>
+    <div className="page-heading"><div><p className="eyebrow">PORTFOLIO INTELLIGENCE</p><h1>{t.analysis}</h1></div><div className="heading-actions"><button className="button primary" type="button" onClick={() => setReportOpen(true)}>Create Monthly Report</button></div></div>
     <div className="analysis-filters panel">
       <label>From Month<input type="month" value={filters.from_month} onChange={(event) => update('from_month', event.target.value)} /></label>
       <label>To Month<input type="month" value={filters.to_month} onChange={(event) => update('to_month', event.target.value)} /></label>
@@ -146,7 +156,20 @@ function Analysis({ language }: { language: Language }) {
       <div className="analysis-chart-grid"><CegValueChart items={data.items} mode="count"/><CegValueChart items={data.items} mode="amount"/></div>
       <PriorityMixChart items={data.items}/>
     </>}
+    {reportOpen && <MonthlyReportDialog cegOptions={data?.options.ceg || []} initialCeg={filters.ceg} close={() => setReportOpen(false)}/>}
   </section>;
+}
+
+function MonthlyReportDialog({ cegOptions, initialCeg, close }: { cegOptions: string[]; initialCeg: string; close: () => void }) {
+  const today = new Date();
+  const defaultMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+  const [month, setMonth] = useState(defaultMonth);
+  const [ceg, setCeg] = useState(initialCeg);
+  const [previewUrl, setPreviewUrl] = useState('');
+  const reportQuery = queryString({ month, ceg });
+  const preview = () => { if (month) setPreviewUrl(`/api/monthly-report.html?${reportQuery}`); };
+  const downloadUrl = `/api/monthly-report.html?${queryString({ month, ceg, download: true })}`;
+  return <div className="modal-backdrop"><div className="modal report-modal" role="dialog" aria-modal="true" aria-labelledby="monthly-report-title"><header><div><p className="eyebrow">MONTHLY REPORT</p><h2 id="monthly-report-title">Procurement Project Monthly Report</h2></div><button aria-label="Close" onClick={close}>×</button></header><div className="report-dialog-body"><div className="report-settings"><label>Report Month<input type="month" required value={month} onChange={(event) => { setMonth(event.target.value); setPreviewUrl(''); }} /></label><label>CEG<select value={ceg} onChange={(event) => { setCeg(event.target.value); setPreviewUrl(''); }}><option value="">All</option>{cegOptions.map((name) => <option key={name}>{name}</option>)}</select></label><button className="button secondary" type="button" disabled={!month} onClick={preview}>Preview Report</button><a className={`button primary${!month ? ' disabled' : ''}`} href={month ? downloadUrl : undefined}>Download HTML</a></div><p className="report-scope-note">Projects are included when their PR Approved Date falls within the selected month. Deleted projects are excluded.</p>{previewUrl ? <iframe className="report-preview" title="Procurement Project Monthly Report preview" src={previewUrl}/> : <div className="report-preview-empty"><strong>Preview your report</strong><span>Select the reporting scope, then click Preview Report.</span></div>}</div></div></div>;
 }
 
 function CegValueChart({ items, mode }: { items: CegAnalysisItem[]; mode: 'count' | 'amount' }) {
@@ -161,7 +184,8 @@ function CegValueChart({ items, mode }: { items: CegAnalysisItem[]; mode: 'count
 }
 
 function PriorityMixChart({ items }: { items: CegAnalysisItem[] }) {
-  return <article className="panel priority-mix"><header><div><h2>Priority Mix by CEG</h2><p>High, Medium, and Normal projects</p></div><div className="priority-legend"><span className="high">High</span><span className="medium">Medium</span><span className="normal">Normal</span></div></header>{!items.length ? <div className="analysis-empty">No matching priority data.</div> : <div className="priority-stack-list">{items.slice(0, 15).map((item) => { const total = item.high_priority_count + item.medium_priority_count + item.normal_priority_count; return <div className="priority-stack-row" key={item.ceg}><span title={item.ceg}>{item.ceg}</span><div>{total > 0 && <><i className="high" style={{ width: `${item.high_priority_count / total * 100}%` }} title={`High: ${item.high_priority_count}`}>{item.high_priority_count > 0 && <small>{item.high_priority_count}</small>}</i><i className="medium" style={{ width: `${item.medium_priority_count / total * 100}%` }} title={`Medium: ${item.medium_priority_count}`}>{item.medium_priority_count > 0 && <small>{item.medium_priority_count}</small>}</i><i className="normal" style={{ width: `${item.normal_priority_count / total * 100}%` }} title={`Normal: ${item.normal_priority_count}`}>{item.normal_priority_count > 0 && <small>{item.normal_priority_count}</small>}</i></>}</div></div>; })}</div>}</article>;
+  const sortedItems = [...items].sort((left, right) => right.high_priority_count - left.high_priority_count || right.project_count - left.project_count || left.ceg.localeCompare(right.ceg));
+  return <article className="panel priority-mix"><header><div><h2>Priority Mix by CEG</h2><p>High, Medium, and Normal projects</p></div><div className="priority-legend"><span className="high">High</span><span className="medium">Medium</span><span className="normal">Normal</span></div></header>{!sortedItems.length ? <div className="analysis-empty">No matching priority data.</div> : <div className="priority-stack-list">{sortedItems.slice(0, 15).map((item) => { const total = item.high_priority_count + item.medium_priority_count + item.normal_priority_count; return <div className="priority-stack-row" key={item.ceg}><span title={item.ceg}>{item.ceg}</span><div>{total > 0 && <><i className="high" style={{ width: `${item.high_priority_count / total * 100}%` }} title={`High: ${item.high_priority_count}`}>{item.high_priority_count > 0 && <small>{item.high_priority_count}</small>}</i><i className="medium" style={{ width: `${item.medium_priority_count / total * 100}%` }} title={`Medium: ${item.medium_priority_count}`}>{item.medium_priority_count > 0 && <small>{item.medium_priority_count}</small>}</i><i className="normal" style={{ width: `${item.normal_priority_count / total * 100}%` }} title={`Normal: ${item.normal_priority_count}`}>{item.normal_priority_count > 0 && <small>{item.normal_priority_count}</small>}</i></>}</div></div>; })}</div>}</article>;
 }
 
 function formatAmount(value: string | number) { return Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
@@ -214,14 +238,14 @@ function Projects({ language }: { language: Language }) {
   const [params, setParams] = useSearchParams();
   const [editing, setEditing] = useState<Project | null | 'new'>(null);
   const [copying, setCopying] = useState<Project | null>(null);
-  const [moreFilters, setMoreFilters] = useState(() => Boolean(params.get('ceg') || params.get('requestor') || params.get('procurement_status') || params.get('pr_approved_from') || params.get('pr_approved_to') || params.get('closing_from') || params.get('closing_to')));
+  const [moreFilters, setMoreFilters] = useState(() => Boolean(params.get('ceg') || params.get('requestor') || params.get('procurement_status') || params.get('pr_approved_from') || params.get('pr_approved_to') || params.get('closing_from') || params.get('closing_to') || params.get('po_release_from') || params.get('po_release_to')));
   const { data: filterOptions = [] } = useQuery({ queryKey: ['options', 'active'], queryFn: () => api<ReferenceOption[]>('/api/reference-options') });
   const filters = useMemo(() => ({
     page: Number(params.get('page') || 1), page_size: 20,
     keyword: params.get('keyword') || '', ceg: params.get('ceg') || '', priority: params.get('priority') || '',
     lifecycle: params.has('lifecycle') ? params.get('lifecycle') || '' : 'active', procurement_status: params.get('procurement_status') || '',
     bu: params.get('bu') || '', requestor: params.get('requestor') || '', overdue: params.get('overdue') || '',
-    pr_approved_from: params.get('pr_approved_from') || '', pr_approved_to: params.get('pr_approved_to') || '', closing_from: params.get('closing_from') || '', closing_to: params.get('closing_to') || '',
+    pr_approved_from: params.get('pr_approved_from') || '', pr_approved_to: params.get('pr_approved_to') || '', closing_from: params.get('closing_from') || '', closing_to: params.get('closing_to') || '', po_release_from: params.get('po_release_from') || '', po_release_to: params.get('po_release_to') || '',
   }), [params]);
   const { data, isLoading, error } = useQuery({ queryKey: ['projects', filters], queryFn: () => api<PaginatedProjects>(`/api/projects?${queryString(filters)}`) });
   const updateFilter = (key: string, value: string) => { const next = new URLSearchParams(params); value ? next.set(key, value) : next.delete(key); if (key !== 'page') next.set('page', '1'); setParams(next); };
@@ -234,11 +258,12 @@ function Projects({ language }: { language: Language }) {
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['projects'] }); queryClient.invalidateQueries({ queryKey: ['dashboard'] }); },
   });
   const activeFilters = [
-    ['keyword', 'Search', filters.keyword], ['priority', 'Priority', filters.priority], ['lifecycle', 'Lifecycle', filters.lifecycle === 'active' ? '' : filters.lifecycle],
-    ['bu', 'BU', filters.bu], ['overdue', 'Overdue', filters.overdue], ['ceg', 'CEG', filters.ceg],
+    ['keyword', 'Search', filters.keyword], ['priority', 'Priority', filters.priority],
+    ['bu', 'BU', filters.bu], ['ceg', 'CEG', filters.ceg],
     ['requestor', 'BU Requestor', filters.requestor], ['procurement_status', 'Status', filters.procurement_status],
     ['pr_approved_from', 'PR Approved from', filters.pr_approved_from], ['pr_approved_to', 'PR Approved to', filters.pr_approved_to],
     ['closing_from', 'Closing from', filters.closing_from], ['closing_to', 'Closing to', filters.closing_to],
+    ['po_release_from', 'PO Release from', filters.po_release_from], ['po_release_to', 'PO Release to', filters.po_release_to],
   ].filter(([, , value]) => value);
   const projectActions = {
     onEdit: setEditing,
@@ -247,13 +272,11 @@ function Projects({ language }: { language: Language }) {
   };
   const exportUrl = `/api/projects-export.xlsx?${queryString({ ...filters, language })}`;
   return <section className="page projects-page">
-    <div className="page-heading"><div><p className="eyebrow">PROJECT PORTFOLIO</p><h1>{t.projects}</h1></div><div className="heading-actions"><a className="button secondary" href={exportUrl}>{t.export}</a><button className="button primary" onClick={() => setEditing('new')}>＋ {t.create}</button></div></div>
+    <div className="page-heading"><div><p className="eyebrow">PROJECT PORTFOLIO</p><h1>{t.projects}</h1></div><div className="heading-actions"><a className="button secondary" href={exportUrl}>{t.export}</a></div></div>
     <div className="filters panel"><div className="filter-main">
       <label>Search<input value={filters.keyword} onChange={(e) => updateFilter('keyword', e.target.value)} placeholder="CEG, supplier, description…" /></label>
       <label>Priority<select value={filters.priority} onChange={(e) => updateFilter('priority', e.target.value)}><option value="">{t.all}</option><option>High</option><option>Medium</option><option>Normal</option></select></label>
-      <label>Lifecycle<select value={filters.lifecycle} onChange={(e) => updateFilter('lifecycle', e.target.value)}><option value="">{t.all}</option><option value="active">{t.active}</option><option value="completed">{t.completed}</option></select></label>
       <label>BU<input value={filters.bu} onChange={(e) => updateFilter('bu', e.target.value)} /></label>
-      <label>Overdue<select value={filters.overdue} onChange={(e) => updateFilter('overdue', e.target.value)}><option value="">{t.all}</option><option value="true">{t.overdue}</option><option value="false">Not overdue</option></select></label>
       <button type="button" className="more-filters" onClick={() => setMoreFilters((value) => !value)}>{moreFilters ? 'Fewer Filters' : 'More Filters'} <span>{moreFilters ? '−' : '+'}</span></button>
     </div>{moreFilters && <div className="filter-advanced">
       <label>CEG<input value={filters.ceg} onChange={(e) => updateFilter('ceg', e.target.value)} /></label>
@@ -263,6 +286,8 @@ function Projects({ language }: { language: Language }) {
       <label>PR Approved To<input type="date" value={filters.pr_approved_to} onChange={(e) => updateFilter('pr_approved_to', e.target.value)} /></label>
       <label>Closing from<input type="date" value={filters.closing_from} onChange={(e) => updateFilter('closing_from', e.target.value)} /></label>
       <label>Closing to<input type="date" value={filters.closing_to} onChange={(e) => updateFilter('closing_to', e.target.value)} /></label>
+      <label>PO Release From<input type="date" value={filters.po_release_from} onChange={(e) => updateFilter('po_release_from', e.target.value)} /></label>
+      <label>PO Release To<input type="date" value={filters.po_release_to} onChange={(e) => updateFilter('po_release_to', e.target.value)} /></label>
     </div>}{activeFilters.length > 0 && <div className="filter-chips">{activeFilters.map(([key, label, value]) => <button type="button" key={key} onClick={() => updateFilter(key, '')}><span>{label}:</span> {value} ×</button>)}<button type="button" className="clear-filters" onClick={() => setParams({})}>Clear all</button></div>}</div>
     {isLoading ? <Loading /> : error ? <ErrorBox error={error} /> : <ProjectTable data={data!} {...projectActions} onBulkDelete={(projects) => bulkRemove.mutateAsync(projects)} bulkDeleting={bulkRemove.isPending} t={t} setPage={(page) => updateFilter('page', String(page))} />}
     {editing && <ProjectDialog project={editing === 'new' ? null : editing} language={language} close={() => setEditing(null)} />}

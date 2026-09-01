@@ -196,6 +196,8 @@ def test_filters_dashboard_and_excel_export(client):
     assert project["project_cycle_business_days"] == 2
     assert client.get("/api/projects?pr_approved_from=2026-08-08").json()["total"] == 0
     assert client.get("/api/projects?pr_approved_from=2026-08-07&pr_approved_to=2026-08-07").json()["total"] == 1
+    assert client.get("/api/projects?po_release_from=2026-08-10&po_release_to=2026-08-12").json()["total"] == 1
+    assert client.get("/api/projects?po_release_from=2026-08-12").json()["total"] == 0
     assert "average_project_cycle_business_days" not in dashboard
     export = client.get("/api/projects-export.xlsx?priority=High")
     assert export.status_code == 200
@@ -296,3 +298,44 @@ def test_ceg_analysis_rejects_invalid_month_range(client):
     response = client.get("/api/ceg-analysis?from_month=2026-03&to_month=2026-02")
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "INVALID_MONTH_RANGE"
+
+
+def test_monthly_html_report_filters_compares_and_downloads(client):
+    client.post("/api/projects", json={
+        "ceg": "Jessie Lin", "bu": "Finance", "requestor": "Alice", "supplier_name": "Acme & Co",
+        "project_priority": "High", "pr_approved_date": "2026-08-12", "budget": "250.00",
+        "currency": "USD", "exchange_rate": "1", "estimated_closing_date": "2020-01-01",
+        "procurement_status_notes": "Needs <review>",
+    })
+    client.post("/api/projects", json={
+        "ceg": "Jessie Lin", "project_priority": "Medium", "pr_approved_date": "2026-07-05",
+        "budget": "100.00", "currency": "USD", "exchange_rate": "1",
+    })
+    client.post("/api/projects", json={
+        "ceg": "Abby Ho", "project_priority": "Normal", "pr_approved_date": "2026-08-20",
+        "budget": "50.00", "currency": "USD", "exchange_rate": "1",
+    })
+
+    preview = client.get("/api/monthly-report.html?month=2026-08&ceg=Jessie%20Lin")
+    assert preview.status_code == 200
+    assert preview.headers["content-type"].startswith("text/html")
+    assert preview.headers["content-disposition"].startswith("inline")
+    assert "Procurement Project Monthly Report" in preview.text
+    assert "Generated" not in preview.text
+    assert "Prepared by" not in preview.text
+    assert "Lifecycle:" not in preview.text
+    assert "USD 250.00" in preview.text
+    assert "Abby Ho" not in preview.text
+    assert "Acme &amp; Co" in preview.text
+    assert "Needs &lt;review&gt;" in preview.text
+    assert "+150.0% vs previous month" in preview.text
+
+    download = client.get("/api/monthly-report.html?month=2026-08&download=true")
+    assert download.status_code == 200
+    assert download.headers["content-disposition"] == 'attachment; filename="Procurement_Project_Monthly_Report_2026-08.html"'
+
+
+def test_monthly_html_report_validates_month(client):
+    response = client.get("/api/monthly-report.html?month=2026-13")
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "INVALID_MONTH"
