@@ -305,7 +305,7 @@ def test_monthly_html_report_filters_compares_and_downloads(client):
         "ceg": "Jessie Lin", "bu": "Finance", "requestor": "Alice", "supplier_name": "Acme & Co",
         "project_priority": "High", "pr_approved_date": "2026-08-12", "budget": "250.00",
         "currency": "USD", "exchange_rate": "1", "estimated_closing_date": "2020-01-01",
-        "procurement_status_notes": "Needs <review>",
+        "description": "Annual software renewal", "procurement_status_notes": "Needs <review>",
     })
     client.post("/api/projects", json={
         "ceg": "Jessie Lin", "project_priority": "Medium", "pr_approved_date": "2026-07-05",
@@ -320,7 +320,14 @@ def test_monthly_html_report_filters_compares_and_downloads(client):
     assert preview.status_code == 200
     assert preview.headers["content-type"].startswith("text/html")
     assert preview.headers["content-disposition"].startswith("inline")
-    assert "Procurement Project Monthly Report" in preview.text
+    assert "Project Tracking Monthly Report" in preview.text
+    assert "CARI Procurement Tracking" not in preview.text
+    assert "<th>Projects</th><th>USD Amount</th><th>High</th>" not in preview.text
+    assert "High: 1" in preview.text
+    assert "Medium: 0" in preview.text
+    assert "Normal: 0" in preview.text
+    assert "<th>CEG</th><th>High</th><th>Medium</th><th>Normal</th>" not in preview.text
+    assert "Priority Mix</h2>" not in preview.text
     assert "Generated" not in preview.text
     assert "Prepared by" not in preview.text
     assert "Lifecycle:" not in preview.text
@@ -328,11 +335,21 @@ def test_monthly_html_report_filters_compares_and_downloads(client):
     assert "Abby Ho" not in preview.text
     assert "Acme &amp; Co" in preview.text
     assert "Needs &lt;review&gt;" in preview.text
+    assert "<th>CEG</th><th>Description</th><th>BU</th>" in preview.text
+    assert "Annual software renewal" in preview.text
+    assert "<th>Priority</th><th>CEG</th><th>Description</th><th>BU</th>" in preview.text
+    assert "<th>BU Requestor</th>" not in preview.text
     assert "+150.0% vs previous month" in preview.text
 
     download = client.get("/api/monthly-report.html?month=2026-08&download=true")
     assert download.status_code == 200
-    assert download.headers["content-disposition"] == 'attachment; filename="Procurement_Project_Monthly_Report_2026-08.html"'
+    assert download.headers["content-disposition"] == 'attachment; filename="Project_Tracking_Monthly_Report_2026-08.html"'
+
+    chinese = client.get("/api/monthly-report.html?month=2026-08&language=zh")
+    assert chinese.status_code == 200
+    assert "项目跟踪月度报告" in chinese.text
+    assert "执行摘要" in chinese.text
+    assert "Executive Summary" not in chinese.text
 
 
 def test_monthly_html_report_validates_month(client):

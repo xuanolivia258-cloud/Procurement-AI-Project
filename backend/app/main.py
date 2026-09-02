@@ -777,9 +777,21 @@ def report_change(current: Decimal | int, previous: Decimal | int) -> tuple[str,
     return f"{change:+.1f}%", "positive" if change > 0 else "negative" if change < 0 else "neutral"
 
 
-def monthly_report_html(month: str, projects: list[Project], previous_projects: list[Project], ceg: str | None) -> str:
+def monthly_report_html(month: str, projects: list[Project], previous_projects: list[Project], ceg: str | None, language: str = "en") -> str:
     safe = lambda value: escape(str(value if value not in (None, "") else "—"))
     amount = lambda value: f"{Decimal(value or 0):,.2f}"
+    labels = {
+        "Project Tracking Monthly Report": "项目跟踪月度报告", "PR Approved": "PR 批准月份", "CEG: All": "CEG：全部", "Procurement": "采购",
+        "No projects in this report period.": "本报告期间内没有项目。", "No data": "暂无数据", "No overdue projects in this report period.": "本报告期间内没有逾期项目。",
+        "Print / Save PDF": "打印 / 保存 PDF", "Executive Summary": "执行摘要", "Projects": "项目数量", "Total USD Amount": "美元总金额", "USD Amount": "美元金额", "New": "新增",
+        "High Priority": "高优先级", "Overdue": "已逾期", "Completed": "已完成", "vs previous month": "较上月", "CEG Analysis": "CEG 分析",
+        "Projects by CEG": "各 CEG 项目数量", "USD Amount by CEG": "各 CEG 美元金额", "Priority Mix": "优先级分布", "Priority by CEG": "各 CEG 优先级", "High": "高", "Medium": "中", "Normal": "普通", "Total": "总计",
+        "Overdue Attention": "逾期项目关注", "Project Details": "项目明细", "Description": "项目描述", "BU Requestor": "BU 申请人", "Supplier": "供应商", "Estimated Closing": "预计结束日期",
+        "Overdue Days": "逾期天数", "Status": "状态", "Notes": "备注", "Priority": "优先级", "PR Approved Date": "PR 批准日期", "Lifecycle": "项目状态",
+        "Active": "进行中", "Confidential internal report": "内部保密报告", "Data source: local reporting database": "数据来源：本地报告数据库",
+        "Sourcing": "寻源", "Qualification": "资质审核", "Supplier Selection": "供应商选择", "Contract Review": "合同审核", "PO Release": "采购订单发布", "Others": "其他",
+    }
+    label = lambda value: labels.get(value, value) if language == "zh" else value
     total_amount = sum((Decimal(project.usd_amount or 0) for project in projects), Decimal("0"))
     previous_amount = sum((Decimal(project.usd_amount or 0) for project in previous_projects), Decimal("0"))
     count_change, count_tone = report_change(len(projects), len(previous_projects))
@@ -798,51 +810,53 @@ def monthly_report_html(month: str, projects: list[Project], previous_projects: 
         key = (project.project_priority or "").lower()
         if key in {"high", "medium", "normal"}:
             group[key] += 1
-    ceg_rows = sorted(ceg_groups.items(), key=lambda item: (-Decimal(item[1]["amount"]), -int(item[1]["count"]), item[0]))
+    ceg_rows = sorted(ceg_groups.items(), key=lambda item: (-int(item[1]["high"]), -int(item[1]["medium"]), -int(item[1]["normal"]), item[0]))
     max_ceg_amount = max((Decimal(data["amount"]) for _, data in ceg_rows), default=Decimal("1")) or Decimal("1")
     max_ceg_count = max((int(data["count"]) for _, data in ceg_rows), default=1)
 
-    ceg_analysis = "".join(
-        f'''<tr><td><strong>{safe(name)}</strong></td><td>{data["count"]}</td><td>USD {amount(data["amount"])}</td><td>{data["high"]}</td><td>{data["medium"]}</td><td>{data["normal"]}</td></tr>'''
+    priority_colors = {"high": "#b4233f", "medium": "#d6a15e", "normal": "#6f9e7c"}
+    def priority_segments(data: dict[str, Decimal | int]) -> str:
+        return "".join(
+            f'<i title="{label(name.title())}: {int(data[name])}" style="display:grid;place-items:center;flex:{int(data[name])};min-width:{"24px" if int(data[name]) else "0"};color:#fff;background:{color};font-style:normal;font-size:9px;font-weight:bold">{int(data[name]) if int(data[name]) else ""}</i>'
+            for name, color in priority_colors.items()
+            if int(data[name])
+        )
+    ceg_priority_chart = "".join(
+        f'''<div style="display:grid;grid-template-columns:120px 1fr 42px;align-items:center;gap:12px;margin:12px 0"><strong style="overflow:hidden;color:#344054;text-overflow:ellipsis;white-space:nowrap;font-size:10px">{safe(name)}</strong><div style="height:24px;overflow:hidden;border-radius:6px;background:#eef2f6"><div style="display:flex;width:{int(data["count"]) / max_ceg_count * 100:.2f}%;height:100%;overflow:hidden;border-radius:6px">{priority_segments(data)}</div></div><b style="color:#667085;text-align:right;font-size:10px">{data["count"]}</b></div>'''
         for name, data in ceg_rows
-    ) or '<tr><td colspan="6" class="empty">No projects in this report period.</td></tr>'
+    ) or f'<p class="empty">{label("No projects in this report period.")}</p>'
     count_bars = "".join(
         f'''<div class="bar-row"><span>{safe(name)}</span><div class="track"><i style="width:{int(data["count"]) / max_ceg_count * 100:.2f}%"></i></div><b>{data["count"]}</b></div>'''
         for name, data in sorted(ceg_rows, key=lambda item: (-int(item[1]["count"]), item[0]))
-    ) or '<p class="empty">No data</p>'
+    ) or f'<p class="empty">{label("No data")}</p>'
     amount_bars = "".join(
         f'''<div class="bar-row"><span>{safe(name)}</span><div class="track amount"><i style="width:{Decimal(data["amount"]) / max_ceg_amount * 100:.2f}%"></i></div><b>USD {amount(data["amount"])}</b></div>'''
-        for name, data in ceg_rows
-    ) or '<p class="empty">No data</p>'
-    priority_total = sum(priority_counts.values()) or 1
-    priority_bar = "".join(
-        f'<i class="{name.lower()}" style="width:{value / priority_total * 100:.2f}%"><span>{value}</span></i>'
-        for name, value in priority_counts.items() if value
-    )
+        for name, data in sorted(ceg_rows, key=lambda item: (-Decimal(item[1]["amount"]), item[0]))
+    ) or f'<p class="empty">{label("No data")}</p>'
+    priority_text_colors = {"High": "#b4233f", "Medium": "#8a5a20", "Normal": "#3f7252"}
     overdue_rows = "".join(
-        f'''<tr><td>{safe(project.ceg)}</td><td>{safe(project.bu)}</td><td>{safe(project.supplier_name)}</td><td>USD {amount(project.usd_amount)}</td><td>{safe(project.estimated_closing_date)}</td><td class="danger">{business_days_between(project.estimated_closing_date, today)}</td><td>{safe(project.procurement_status)}</td><td>{safe(project.procurement_status_notes)}</td></tr>'''
+        f'''<tr><td>{safe(project.ceg)}</td><td>{safe(project.description)}</td><td>{safe(project.bu)}</td><td>{safe(project.supplier_name)}</td><td>USD {amount(project.usd_amount)}</td><td>{safe(project.estimated_closing_date)}</td><td class="danger">{business_days_between(project.estimated_closing_date, today)}</td><td>{safe(label(project.procurement_status or ""))}</td><td>{safe(project.procurement_status_notes)}</td></tr>'''
         for project in sorted(overdue_projects, key=lambda item: item.estimated_closing_date or today)
-    ) or '<tr><td colspan="8" class="empty">No overdue projects in this report period.</td></tr>'
+    ) or f'<tr><td colspan="9" class="empty">{label("No overdue projects in this report period.")}</td></tr>'
     priority_rank = {"High": 0, "Medium": 1, "Normal": 2}
     detail_rows = "".join(
-        f'''<tr><td><span class="priority {safe(project.project_priority).lower()}">{safe(project.project_priority)}</span></td><td>{safe(project.ceg)}</td><td>{safe(project.bu)}</td><td>{safe(project.requestor)}</td><td>{safe(project.supplier_name)}</td><td>USD {amount(project.usd_amount)}</td><td>{safe(project.procurement_status)}</td><td>{safe(project.pr_approved_date)}</td><td>{safe(project.estimated_closing_date)}</td><td>{safe(project.lifecycle).title()}</td></tr>'''
+        f'''<tr><td><span class="priority {safe(project.project_priority).lower()}" style="color:{priority_text_colors.get(project.project_priority or '', '#475467')}">{label(project.project_priority or "")}</span></td><td>{safe(project.ceg)}</td><td>{safe(project.description)}</td><td>{safe(project.bu)}</td><td>{safe(project.supplier_name)}</td><td>USD {amount(project.usd_amount)}</td><td>{safe(label(project.procurement_status or ""))}</td><td>{safe(project.pr_approved_date)}</td><td>{safe(project.estimated_closing_date)}</td><td>{label((project.lifecycle or "").title())}</td></tr>'''
         for project in sorted(projects, key=lambda item: (priority_rank.get(item.project_priority or "", 3), item.ceg or "", item.id))
-    ) or '<tr><td colspan="10" class="empty">No projects in this report period.</td></tr>'
-    scope = " · ".join(part for part in [f"PR Approved: {month}", f"CEG: {ceg}" if ceg else "CEG: All"])
+    ) or f'<tr><td colspan="10" class="empty">{label("No projects in this report period.")}</td></tr>'
+    scope = " · ".join(part for part in [f"{label('PR Approved')}: {month}", f"CEG: {ceg}" if ceg else label("CEG: All")])
 
-    return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Procurement Project Monthly Report - {safe(month)}</title><style>
+    return f'''<!doctype html><html lang="{'zh-CN' if language == 'zh' else 'en'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{label("Project Tracking Monthly Report")} - {safe(month)}</title><style>
     @page{{size:A4 landscape;margin:12mm}}*{{box-sizing:border-box}}body{{margin:0;color:#172033;background:#edf2f8;font-family:Arial,"Microsoft YaHei",sans-serif;font-size:12px}}.report{{max-width:1180px;margin:24px auto;padding:0 38px 34px;overflow:hidden;border:1px solid #dce4ee;border-radius:18px;background:#fff;box-shadow:0 18px 48px #22324d1a}}header.report-head{{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;margin:0 -38px;padding:30px 38px 28px;color:#fff;background:linear-gradient(120deg,#172b4d,#244d7c 62%,#2c6d8f)}}.brand{{margin-bottom:14px;color:#fff;font-size:16px;font-weight:bold;letter-spacing:.08em}}h1{{margin:0 0 9px;font-size:29px;letter-spacing:-.02em}}h2{{display:flex;align-items:center;gap:10px;margin:0 0 15px;color:#172b4d;font-size:17px}}h2:before{{width:4px;height:17px;border-radius:3px;background:#3478b8;content:""}}h3{{margin:0 0 15px;color:#243b5a;font-size:13px}}p{{margin:0;color:#667085}}.report-head p{{color:#dbe9f5}}.report-month{{min-width:104px;padding:10px 15px;border:1px solid #ffffff40;border-radius:20px;background:#ffffff18;text-align:center;font-size:14px;font-weight:bold;letter-spacing:.04em}}.toolbar{{max-width:1180px;margin:18px auto 0;text-align:right}}button{{padding:10px 17px;border:0;border-radius:8px;color:#fff;background:#244d7c;box-shadow:0 5px 14px #244d7c33;cursor:pointer}}section{{margin-top:30px;break-inside:avoid}}.metrics{{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}}.metric{{position:relative;min-height:104px;padding:17px;border:1px solid #dfe7f0;border-radius:12px;background:#f8fafc}}.metric:before{{position:absolute;top:0;right:16px;left:16px;height:3px;border-radius:0 0 3px 3px;background:#527aa5;content:""}}.metric:nth-child(2):before{{background:#2f80a5}}.metric:nth-child(3):before{{background:#c24c5a}}.metric:nth-child(4):before{{background:#d06a61}}.metric:nth-child(5):before{{background:#2d8a67}}.metric span{{display:block;color:#667085;font-size:9px;font-weight:bold;text-transform:uppercase;letter-spacing:.05em}}.metric strong{{display:block;margin-top:20px;color:#172b4d;font-size:22px}}.metric small{{display:block;margin-top:7px;color:#667085}}.positive{{color:#087554!important}}.negative,.danger{{color:#b4233f!important;font-weight:bold}}.neutral{{color:#667085}}.charts{{display:grid;grid-template-columns:1fr 1fr;gap:18px}}.card{{padding:19px;border:1px solid #dfe7f0;border-radius:12px;background:linear-gradient(180deg,#fff,#f9fbfd)}}.bar-row{{display:grid;grid-template-columns:120px 1fr 110px;align-items:center;gap:10px;margin:11px 0}}.bar-row>span{{overflow:hidden;color:#344054;text-overflow:ellipsis;white-space:nowrap}}.bar-row>b{{color:#344054;font-size:10px;text-align:right}}.track{{height:11px;overflow:hidden;border-radius:6px;background:#e8eef5}}.track i{{display:block;height:100%;border-radius:6px;background:linear-gradient(90deg,#315b8a,#4e81b5)}}.track.amount i{{background:linear-gradient(90deg,#258199,#43a7af)}}.priority-bar{{display:flex;height:32px;overflow:hidden;border-radius:8px;background:#eef2f6}}.priority-bar i{{display:grid;place-items:center;color:#fff;font-style:normal;font-weight:bold}}.priority-bar .high{{background:#bd3f50}}.priority-bar .medium{{background:#d99834}}.priority-bar .normal{{color:#344054;background:#c9d2de}}.legend{{display:flex;gap:18px;margin-top:13px;color:#667085}}.table-scroll{{overflow:hidden;border:1px solid #dfe7f0;border-radius:12px}}table{{width:100%;border-collapse:collapse;background:#fff}}th,td{{padding:10px;border-bottom:1px solid #e8edf3;text-align:left;vertical-align:top}}tr:last-child td{{border-bottom:0}}tbody tr:nth-child(even){{background:#fafbfd}}th{{color:#52657a;background:#edf3f8;font-size:9px;text-transform:uppercase;letter-spacing:.045em}}td{{font-size:10px}}.priority{{padding:3px 7px;border-radius:10px;font-size:9px;font-weight:bold}}.priority.high{{color:#b4233f;background:#fff0f2}}.priority.medium{{color:#9a6700;background:#fff7df}}.priority.normal{{color:#475467;background:#f2f4f7}}.empty{{padding:28px;color:#98a2b3;text-align:center}}footer{{margin-top:30px;padding-top:13px;border-top:1px solid #e5eaf0;color:#98a2b3;font-size:9px;text-align:center}}@media(max-width:800px){{.report{{margin:0;padding:0 22px 22px;border-radius:0}}.metrics,.charts{{grid-template-columns:1fr 1fr}}header.report-head{{align-items:flex-start;flex-direction:column;margin:0 -22px;padding:25px 22px}}.table-scroll{{overflow:auto}}}}@media print{{body{{background:#fff}}.toolbar{{display:none}}.report{{max-width:none;margin:0;padding:0;border:0;box-shadow:none}}header.report-head{{margin:0 0 24px;padding:24px 28px}}section{{break-inside:avoid}}}}
-    </style></head><body><div class="toolbar"><button onclick="window.print()">Print / Save PDF</button></div><main class="report"><header class="report-head"><div><div class="brand">🍁 CARI PROCUREMENT</div><h1>Procurement Project Monthly Report</h1><p>{safe(scope)}</p></div><div class="report-month">{safe(month)}</div></header>
-    <section><h2>Executive Summary</h2><div class="metrics"><div class="metric"><span>Projects</span><strong>{len(projects)}</strong><small class="{count_tone}">{count_change} vs previous month</small></div><div class="metric"><span>Total USD Amount</span><strong>USD {amount(total_amount)}</strong><small class="{amount_tone}">{amount_change} vs previous month</small></div><div class="metric"><span>High Priority</span><strong>{priority_counts["High"]}</strong></div><div class="metric"><span>Overdue</span><strong class="{'danger' if overdue_projects else ''}">{len(overdue_projects)}</strong></div><div class="metric"><span>Completed</span><strong>{completed_count}</strong></div></div></section>
-    <section><h2>CEG Analysis</h2><div class="charts"><div class="card"><h3>Projects by CEG</h3>{count_bars}</div><div class="card"><h3>USD Amount by CEG</h3>{amount_bars}</div></div><div class="table-scroll" style="margin-top:16px"><table><thead><tr><th>CEG</th><th>Projects</th><th>USD Amount</th><th>High</th><th>Medium</th><th>Normal</th></tr></thead><tbody>{ceg_analysis}</tbody></table></div></section>
-    <section><h2>Priority Mix</h2><div class="card"><div class="priority-bar">{priority_bar}</div><div class="legend"><span>High: {priority_counts["High"]}</span><span>Medium: {priority_counts["Medium"]}</span><span>Normal: {priority_counts["Normal"]}</span></div></div></section>
-    <section><h2>Overdue Attention</h2><div class="table-scroll"><table><thead><tr><th>CEG</th><th>BU</th><th>Supplier</th><th>USD Amount</th><th>Estimated Closing</th><th>Overdue Days</th><th>Status</th><th>Notes</th></tr></thead><tbody>{overdue_rows}</tbody></table></div></section>
-    <section><h2>Project Details</h2><div class="table-scroll"><table><thead><tr><th>Priority</th><th>CEG</th><th>BU</th><th>BU Requestor</th><th>Supplier</th><th>USD Amount</th><th>Status</th><th>PR Approved</th><th>Estimated Closing</th><th>Lifecycle</th></tr></thead><tbody>{detail_rows}</tbody></table></div></section><footer>CARI Procurement Tracking · Confidential internal report · Data source: local reporting database</footer></main></body></html>'''
+    </style></head><body><div class="toolbar"><button onclick="window.print()">{label("Print / Save PDF")}</button></div><main class="report"><header class="report-head"><div><div class="brand">🍁 CARI {label("Procurement")}</div><h1>{label("Project Tracking Monthly Report")}</h1><p>{safe(scope)}</p></div><div class="report-month">{safe(month)}</div></header>
+    <section><h2>{label("Executive Summary")}</h2><div class="metrics"><div class="metric"><span>{label("Projects")}</span><strong>{len(projects)}</strong><small class="{count_tone}">{label(count_change)} {label("vs previous month")}</small></div><div class="metric"><span>{label("Total USD Amount")}</span><strong>USD {amount(total_amount)}</strong><small class="{amount_tone}">{label(amount_change)} {label("vs previous month")}</small></div><div class="metric"><span>{label("High Priority")}</span><strong>{priority_counts["High"]}</strong></div><div class="metric"><span>{label("Overdue")}</span><strong class="{'danger' if overdue_projects else ''}">{len(overdue_projects)}</strong></div><div class="metric"><span>{label("Completed")}</span><strong>{completed_count}</strong></div></div></section>
+    <section><h2>{label("CEG Analysis")}</h2><div class="charts"><div class="card"><h3>{label("Projects by CEG")}</h3>{count_bars}</div><div class="card"><h3>{label("USD Amount by CEG")}</h3>{amount_bars}</div></div><div class="card" style="margin-top:16px"><div style="display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:16px"><h3 style="margin:0">{label("Priority by CEG")}</h3><div class="legend" style="margin:0;font-weight:bold"><span style="color:#b4233f">{label("High")}: {priority_counts["High"]}</span><span style="color:#8a5a20">{label("Medium")}: {priority_counts["Medium"]}</span><span style="color:#3f7252">{label("Normal")}: {priority_counts["Normal"]}</span></div></div>{ceg_priority_chart}</div></section>
+    <section><h2>{label("Overdue Attention")}</h2><div class="table-scroll"><table><thead><tr><th>CEG</th><th>{label("Description")}</th><th>BU</th><th>{label("Supplier")}</th><th>{label("USD Amount")}</th><th>{label("Estimated Closing")}</th><th>{label("Overdue Days")}</th><th>{label("Status")}</th><th>{label("Notes")}</th></tr></thead><tbody>{overdue_rows}</tbody></table></div></section>
+    <section><h2>{label("Project Details")}</h2><div class="table-scroll"><table><thead><tr><th>{label("Priority")}</th><th>CEG</th><th>{label("Description")}</th><th>BU</th><th>{label("Supplier")}</th><th>{label("USD Amount")}</th><th>{label("Status")}</th><th>{label("PR Approved Date")}</th><th>{label("Estimated Closing")}</th><th>{label("Lifecycle")}</th></tr></thead><tbody>{detail_rows}</tbody></table></div></section><footer>CARI {label("Procurement")} · {label("Confidential internal report")} · {label("Data source: local reporting database")}</footer></main></body></html>'''
 
 
 @app.get("/api/monthly-report.html")
 def export_monthly_report(
-    request: Request, month: str, ceg: str | None = None,
+    request: Request, month: str, ceg: str | None = None, language: str = "en",
     download: bool = False, db: Session = Depends(get_db), actor: Actor = Depends(get_actor),
 ):
     start = parse_month(month)
@@ -856,8 +870,10 @@ def export_monthly_report(
         previous_filters.append(Project.ceg == ceg)
     projects = list(db.scalars(select(Project).where(*filters)))
     previous_projects = list(db.scalars(select(Project).where(*previous_filters)))
-    content = monthly_report_html(month, projects, previous_projects, ceg)
-    headers = {"Content-Disposition": f'{"attachment" if download else "inline"}; filename="Procurement_Project_Monthly_Report_{month}.html"'}
+    if language not in {"en", "zh"}:
+        raise HTTPException(422, detail={"code": "INVALID_LANGUAGE", "message": "Language must be en or zh."})
+    content = monthly_report_html(month, projects, previous_projects, ceg, language)
+    headers = {"Content-Disposition": f'{"attachment" if download else "inline"}; filename="Project_Tracking_Monthly_Report_{month}.html"'}
     log_operation("monthly_report_export" if download else "monthly_report_preview", actor.id, count=len(projects), message=f"month={month}; ceg={ceg or 'all'}", request_id=request.state.request_id)
     return Response(content=content, media_type="text/html", headers=headers)
 
