@@ -263,6 +263,33 @@ def session(actor: Actor = Depends(get_actor)):
     return {"actor": actor}
 
 
+def parse_iam_token_response(response: httpx.Response) -> str:
+    for header_name in ("Authorization", "X-Subject-Token", "X-Auth-Token"):
+        token = response.headers.get(header_name, "").strip()
+        if token:
+            return token
+
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise ValueError("IAM service returned no authentication token.") from exc
+
+    candidates = []
+    if isinstance(payload, dict):
+        data = payload.get("data")
+        attributes = data.get("attributes") if isinstance(data, dict) else None
+        if isinstance(attributes, dict):
+            candidates.extend((attributes.get("token"), attributes.get("access_token"), attributes.get("accessToken")))
+        if isinstance(data, dict):
+            candidates.extend((data.get("token"), data.get("access_token"), data.get("accessToken"), data.get("id")))
+        candidates.extend((payload.get("token"), payload.get("access_token"), payload.get("accessToken")))
+
+    token = next((item.strip() for item in candidates if isinstance(item, str) and item.strip()), "")
+    if not token:
+        raise ValueError("IAM service returned no authentication token.")
+    return token
+
+
 def parse_exchange_rate_response(
     payload: dict, from_currency: str, to_currency: str, rate_type: str,
 ) -> tuple[Decimal, datetime | None]:
@@ -309,9 +336,14 @@ def exchange_rate(request: Request, currency: Currency, actor: Actor = Depends(g
         log_operation("exchange_rate_lookup", actor.id, count=0, duration_ms=(time.perf_counter() - started) * 1000,
                       request_id=request.state.request_id, message="USD base exchange rate returned.")
         return {"currency": currency, "target_currency": "USD", "rate": "1.00000000", "fetched_at": fetched_at, "source": "USD base rate"}
-    tenant_id = settings.exchange_rate_tenant_id.strip()
+    enterprise_id = settings.exchange_rate_iam_enterprise_id.strip()
+    tenant_id = settings.exchange_rate_tenant_id.strip() or enterprise_id
     rate_type = settings.exchange_rate_rate_type.strip()
-    if not tenant_id or not rate_type:
+    iam_account = settings.exchange_rate_iam_account.strip()
+    iam_secret = settings.exchange_rate_iam_secret.get_secret_value().strip()
+    iam_project_id = settings.exchange_rate_iam_project_id.strip()
+    if not all((tenant_id, rate_type, settings.exchange_rate_iam_token_url.strip(), iam_account, iam_secret,
+                iam_project_id, enterprise_id)):
         log_operation("exchange_rate_lookup", actor.id, result="not_configured", count=0,
                       duration_ms=(time.perf_counter() - started) * 1000, request_id=request.state.request_id,
                       message=f"Exchange rate lookup failed; currency={currency}.")
@@ -331,9 +363,30 @@ def exchange_rate(request: Request, currency: Currency, actor: Actor = Depends(g
             "start_date": fetched_at.strftime("%Y/%m/%d"),
         }],
     }
+    token_payload = {
+        "data": {
+            "type": "token",
+            "attributes": {
+                "account": iam_account,
+                "secret": iam_secret,
+                "project": iam_project_id,
+                "enterprise": enterprise_id,
+            },
+        },
+    }
     try:
+        token_response = httpx.post(
+            settings.exchange_rate_iam_token_url,
+            headers={"Content-Type": "application/json"},
+            json=token_payload,
+            follow_redirects=True,
+            timeout=settings.exchange_rate_timeout_seconds,
+        )
+        token_response.raise_for_status()
+        authorization_token = parse_iam_token_response(token_response)
         response = httpx.post(
             settings.exchange_rate_api_url,
+            headers={"Authorization": authorization_token},
             json=request_payload,
             follow_redirects=True,
             timeout=settings.exchange_rate_timeout_seconds,
