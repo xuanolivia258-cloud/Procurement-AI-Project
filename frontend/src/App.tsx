@@ -216,8 +216,16 @@ function CegValueChart({ items, mode, language }: { items: CegAnalysisItem[]; mo
 }
 
 function PriorityMixChart({ items, language }: { items: CegAnalysisItem[]; language: Language }) {
-  const sortedItems = [...items].sort((left, right) => right.high_priority_count - left.high_priority_count || right.project_count - left.project_count || left.ceg.localeCompare(right.ceg));
+  const sortedItems = sortCegByPriority(items);
   return <article className="panel priority-mix"><header><div><h2>{tr(language, 'Priority Mix by CEG')}</h2><p>{tr(language, 'High, Medium, and Normal projects')}</p></div><div className="priority-legend"><span className="high">{tr(language, 'High')}</span><span className="medium">{tr(language, 'Medium')}</span><span className="normal">{tr(language, 'Normal')}</span></div></header>{!sortedItems.length ? <div className="analysis-empty">{tr(language, 'No matching priority data.')}</div> : <div className="priority-stack-list">{sortedItems.slice(0, 15).map((item) => { const total = item.high_priority_count + item.medium_priority_count + item.normal_priority_count; return <div className="priority-stack-row" key={item.ceg}><span title={item.ceg}>{item.ceg}</span><div>{total > 0 && <><i className="high" style={{ width: `${item.high_priority_count / total * 100}%` }} title={`${tr(language, 'High')}: ${item.high_priority_count}`}>{item.high_priority_count > 0 && <small>{item.high_priority_count}</small>}</i><i className="medium" style={{ width: `${item.medium_priority_count / total * 100}%` }} title={`${tr(language, 'Medium')}: ${item.medium_priority_count}`}>{item.medium_priority_count > 0 && <small>{item.medium_priority_count}</small>}</i><i className="normal" style={{ width: `${item.normal_priority_count / total * 100}%` }} title={`${tr(language, 'Normal')}: ${item.normal_priority_count}`}>{item.normal_priority_count > 0 && <small>{item.normal_priority_count}</small>}</i></>}</div></div>; })}</div>}</article>;
+}
+
+export function sortCegByPriority(items: CegAnalysisItem[]) {
+  return [...items].sort((left, right) =>
+    right.high_priority_count - left.high_priority_count
+    || right.medium_priority_count - left.medium_priority_count
+    || right.normal_priority_count - left.normal_priority_count
+    || left.ceg.localeCompare(right.ceg));
 }
 
 function formatAmount(value: string | number) { return Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
