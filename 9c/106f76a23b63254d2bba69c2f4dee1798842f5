@@ -1,0 +1,28 @@
+.env.example
+  h_546c22315960fe 9-12
+README.md
+  h_546c22315960fe 66-67
+backend/app/config.py
+  h_546c22315960fe 18-21
+backend/app/main.py
+  h_546c22315960fe 10,296-400,409,414,417-427,454-455,471-479,483,485-493,507,510-513,536-545,557-582,597-602,612
+backend/tests/test_exchange_rate.py
+  h_546c22315960fe 2,7-14,60-69,112-113,123-205
+docker-compose.yml
+  h_546c22315960fe 13-16
+frontend/src/App.tsx
+  h_546c22315960fe 1,46,394-395,401,403-407,410-421,424,426,428-430,452-456
+frontend/src/styles.css
+  h_546c22315960fe 82
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "9c106f76a23b63254d2bba69c2f4dee1798842f5",
+  "prompts": {},
+  "humans": {
+    "h_546c22315960fe": {
+      "author": "lisen (F) <l00477035@china.huawei.com>"
+    }
+  }
+}
