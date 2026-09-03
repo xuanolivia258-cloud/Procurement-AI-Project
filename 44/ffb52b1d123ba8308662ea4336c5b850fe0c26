@@ -1,0 +1,18 @@
+.env.example
+  h_546c22315960fe 9
+backend/app/config.py
+  h_546c22315960fe 18
+docker-compose.yml
+  h_546c22315960fe 13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "44ffb52b1d123ba8308662ea4336c5b850fe0c26",
+  "prompts": {},
+  "humans": {
+    "h_546c22315960fe": {
+      "author": "lisen (F) <l00477035@china.huawei.com>"
+    }
+  }
+}
