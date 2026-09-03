@@ -29,7 +29,9 @@ from sqlalchemy.orm import Session
 from .auth import get_actor
 from .config import settings
 from .database import Base, SessionLocal, engine, get_db
-from .logging_config import log_access, log_operation, log_request_error
+from .logging_config import (
+    log_access, log_integration_event, log_operation, log_request_error, summarize_http_response,
+)
 from .models import Lifecycle, Project, ProjectAuditLog, ReferenceOption, utcnow
 from .schemas import (
     Actor, AuditLogRead, BulkProjectDeleteRequest, Currency, LifecycleRequest, PaginatedProjects, ProjectCreate,
@@ -374,6 +376,8 @@ def exchange_rate(request: Request, currency: Currency, actor: Actor = Depends(g
             },
         },
     }
+    token_response = None
+    token_started = time.perf_counter()
     try:
         token_response = httpx.post(
             settings.exchange_rate_iam_token_url,
@@ -384,16 +388,76 @@ def exchange_rate(request: Request, currency: Currency, actor: Actor = Depends(g
         )
         token_response.raise_for_status()
         authorization_token = parse_iam_token_response(token_response)
-        response = httpx.post(
+        log_integration_event(
+            request_id=request.state.request_id,
+            actor_id=actor.id,
+            service="huawei_iam",
+            operation="token_fetch",
+            result="success",
+            url=settings.exchange_rate_iam_token_url,
+            status=token_response.status_code,
+            duration_ms=(time.perf_counter() - token_started) * 1000,
+            message="Dynamic IAM token obtained; sensitive response content omitted.",
+        )
+    except (httpx.HTTPError, ValueError) as exc:
+        log_integration_event(
+            request_id=request.state.request_id,
+            actor_id=actor.id,
+            service="huawei_iam",
+            operation="token_fetch",
+            result="failed",
+            url=settings.exchange_rate_iam_token_url,
+            status=token_response.status_code if token_response is not None else "-",
+            duration_ms=(time.perf_counter() - token_started) * 1000,
+            response=summarize_http_response(token_response),
+            message="Failed to obtain dynamic IAM token.",
+            exc=exc,
+        )
+        log_operation("exchange_rate_lookup", actor.id, result="failed:iam", count=0,
+                      duration_ms=(time.perf_counter() - started) * 1000, request_id=request.state.request_id,
+                      message=f"Exchange rate lookup failed during IAM authentication; currency={currency}.")
+        raise HTTPException(502, detail={
+            "code": "EXCHANGE_RATE_AUTH_UNAVAILABLE",
+            "message": "Exchange rate authentication is temporarily unavailable.",
+        }) from exc
+
+    rate_response = None
+    rate_started = time.perf_counter()
+    try:
+        rate_response = httpx.post(
             settings.exchange_rate_api_url,
             headers={"Authorization": authorization_token},
             json=request_payload,
             follow_redirects=True,
             timeout=settings.exchange_rate_timeout_seconds,
         )
-        response.raise_for_status()
-        rate, quoted_at = parse_exchange_rate_response(response.json(), currency, "USD", rate_type)
+        rate_response.raise_for_status()
+        rate, quoted_at = parse_exchange_rate_response(rate_response.json(), currency, "USD", rate_type)
+        log_integration_event(
+            request_id=request.state.request_id,
+            actor_id=actor.id,
+            service="huawei_idata_finance",
+            operation="exchange_rate_fetch",
+            result="success",
+            url=settings.exchange_rate_api_url,
+            status=rate_response.status_code,
+            duration_ms=(time.perf_counter() - rate_started) * 1000,
+            message=f"Exchange rate received; currency={currency}; target=USD; rate_type={rate_type}.",
+        )
     except (httpx.HTTPError, ValueError) as exc:
+        log_integration_event(
+            request_id=request.state.request_id,
+            actor_id=actor.id,
+            service="huawei_idata_finance",
+            operation="exchange_rate_fetch",
+            result="failed",
+            url=settings.exchange_rate_api_url,
+            status=rate_response.status_code if rate_response is not None else "-",
+            duration_ms=(time.perf_counter() - rate_started) * 1000,
+            response=summarize_http_response(rate_response),
+            message=f"Failed to obtain exchange rate; currency={currency}; target=USD; rate_type={rate_type}.",
+            exc=exc,
+        )
         log_operation("exchange_rate_lookup", actor.id, result=f"failed:{type(exc).__name__}", count=0,
                       duration_ms=(time.perf_counter() - started) * 1000, request_id=request.state.request_id,
                       message=f"Exchange rate lookup failed; currency={currency}.")

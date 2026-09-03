@@ -6,7 +6,7 @@ services:
       AUTH_MODE: disabled
       LOCAL_ACTOR_ID: local-test-user
       LOCAL_ACTOR_NAME: Local Test User
-      EXCHANGE_RATE_API_URL: ${EXCHANGE_RATE_API_URL:-https://apigp-kwe.huawei.com/api/idata/fin/v2/projects/com.huawei.caplatform/getBatchRatemsRateList}
+      EXCHANGE_RATE_API_URL: ${EXCHANGE_RATE_API_URL:-https://apig.his.huawei.com/api/idata/fin/v2/projects/com.huawei.caplatform/getBatchRatemsRateList}
       EXCHANGE_RATE_TENANT_ID: ${EXCHANGE_RATE_TENANT_ID:-}
       EXCHANGE_RATE_RATE_TYPE: ${EXCHANGE_RATE_RATE_TYPE:-SPOT}
       EXCHANGE_RATE_TIMEOUT_SECONDS: ${EXCHANGE_RATE_TIMEOUT_SECONDS:-10}
@@ -18,6 +18,8 @@ services:
       ERROR_LOG_FILE: ${ERROR_LOG_FILE:-/app/data/logs/backend-errors.log}
       ACCESS_LOG_FILE: ${ACCESS_LOG_FILE:-/app/data/logs/backend-access.log}
       OPERATION_LOG_FILE: ${OPERATION_LOG_FILE:-/app/data/logs/backend-operations.log}
+      INTEGRATION_LOG_FILE: ${INTEGRATION_LOG_FILE:-/app/data/logs/backend-integrations.log}
+      INTEGRATION_LOG_RESPONSE_MAX_CHARS: ${INTEGRATION_LOG_RESPONSE_MAX_CHARS:-2000}
       ERROR_LOG_MAX_BYTES: ${ERROR_LOG_MAX_BYTES:-5000000}
       ERROR_LOG_BACKUP_COUNT: ${ERROR_LOG_BACKUP_COUNT:-5}
     volumes:

@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     local_actor_id: str = "local-test-user"
     local_actor_name: str = "Local Test User"
     cors_origins: str = "http://localhost:5173,http://localhost:8080"
-    exchange_rate_api_url: str = "https://apigp-kwe.huawei.com/api/idata/fin/v2/projects/com.huawei.caplatform/getBatchRatemsRateList"
+    exchange_rate_api_url: str = "https://apig.his.huawei.com/api/idata/fin/v2/projects/com.huawei.caplatform/getBatchRatemsRateList"
     exchange_rate_tenant_id: str = ""
     exchange_rate_rate_type: str = "SPOT"
     exchange_rate_timeout_seconds: float = 10.0
@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     error_log_file: str = "data/logs/backend-errors.log"
     access_log_file: str = "data/logs/backend-access.log"
     operation_log_file: str = "data/logs/backend-operations.log"
+    integration_log_file: str = "data/logs/backend-integrations.log"
+    integration_log_response_max_chars: int = 2000
     error_log_max_bytes: int = 5_000_000
     error_log_backup_count: int = 5
 
