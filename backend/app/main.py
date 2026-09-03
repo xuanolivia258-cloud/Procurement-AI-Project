@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from html import escape
+from threading import Lock
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
@@ -292,6 +293,111 @@ def parse_iam_token_response(response: httpx.Response) -> str:
     return token
 
 
+class ExchangeRateQuoteNotFound(ValueError):
+    pass
+
+
+_iam_token_cache_lock = Lock()
+_iam_token_cache: dict[tuple[str, str, str, str], tuple[str, float]] = {}
+_exchange_rate_cache_lock = Lock()
+_exchange_rate_cache: dict[tuple[str, str, str, str], tuple[dict, float]] = {}
+
+
+def clear_exchange_rate_caches() -> None:
+    """Clear process-local integration caches. Intended for tests and controlled resets."""
+    with _iam_token_cache_lock:
+        _iam_token_cache.clear()
+    with _exchange_rate_cache_lock:
+        _exchange_rate_cache.clear()
+
+
+def get_iam_authorization(*, request_id: str, actor_id: str, token_payload: dict,
+                          account: str, project_id: str, enterprise_id: str) -> str:
+    cache_key = (settings.exchange_rate_iam_token_url, account, project_id, enterprise_id)
+    started = time.perf_counter()
+    with _iam_token_cache_lock:
+        cached = _iam_token_cache.get(cache_key)
+        if cached and cached[1] > time.monotonic():
+            log_integration_event(
+                request_id=request_id,
+                actor_id=actor_id,
+                service="huawei_iam",
+                operation="token_fetch",
+                result="cache_hit",
+                url=settings.exchange_rate_iam_token_url,
+                duration_ms=(time.perf_counter() - started) * 1000,
+                message="Reused a cached dynamic IAM token; sensitive content omitted.",
+            )
+            return cached[0]
+
+        _iam_token_cache.pop(cache_key, None)
+        token_response = None
+        try:
+            token_response = httpx.post(
+                settings.exchange_rate_iam_token_url,
+                headers={"Content-Type": "application/json"},
+                json=token_payload,
+                follow_redirects=True,
+                timeout=settings.exchange_rate_timeout_seconds,
+            )
+            token_response.raise_for_status()
+            token = parse_iam_token_response(token_response)
+        except (httpx.HTTPError, ValueError) as exc:
+            log_integration_event(
+                request_id=request_id,
+                actor_id=actor_id,
+                service="huawei_iam",
+                operation="token_fetch",
+                result="failed",
+                url=settings.exchange_rate_iam_token_url,
+                status=token_response.status_code if token_response is not None else "-",
+                duration_ms=(time.perf_counter() - started) * 1000,
+                response=summarize_http_response(token_response),
+                message="Failed to obtain dynamic IAM token.",
+                exc=exc,
+            )
+            raise
+
+        ttl = max(0, settings.exchange_rate_iam_token_cache_seconds)
+        if ttl:
+            _iam_token_cache[cache_key] = (token, time.monotonic() + ttl)
+        log_integration_event(
+            request_id=request_id,
+            actor_id=actor_id,
+            service="huawei_iam",
+            operation="token_fetch",
+            result="success",
+            url=settings.exchange_rate_iam_token_url,
+            status=token_response.status_code,
+            duration_ms=(time.perf_counter() - started) * 1000,
+            message="Dynamic IAM token obtained; sensitive response content omitted.",
+        )
+        return token
+
+
+def get_cached_exchange_rate(cache_key: tuple[str, str, str, str], *, allow_stale: bool) -> dict | None:
+    now = time.monotonic()
+    fresh_seconds = max(0, settings.exchange_rate_cache_seconds)
+    stale_seconds = max(fresh_seconds, settings.exchange_rate_stale_seconds)
+    max_age = stale_seconds if allow_stale else fresh_seconds
+    with _exchange_rate_cache_lock:
+        cached = _exchange_rate_cache.get(cache_key)
+        if not cached:
+            return None
+        payload, stored_at = cached
+        age = now - stored_at
+        if max_age <= 0 or age >= max_age:
+            if age >= stale_seconds:
+                _exchange_rate_cache.pop(cache_key, None)
+            return None
+        return {**payload, "cached": True, "stale": age >= fresh_seconds}
+
+
+def store_exchange_rate(cache_key: tuple[str, str, str, str], payload: dict) -> None:
+    with _exchange_rate_cache_lock:
+        _exchange_rate_cache[cache_key] = (dict(payload), time.monotonic())
+
+
 def parse_exchange_rate_response(
     payload: dict, from_currency: str, to_currency: str, rate_type: str,
 ) -> tuple[Decimal, datetime | None]:
@@ -300,17 +406,25 @@ def parse_exchange_rate_response(
     data = payload.get("data")
     result = data.get("result") if isinstance(data, dict) else None
     if not isinstance(result, list) or not result:
-        raise ValueError("Exchange rate service returned no quote.")
+        raise ExchangeRateQuoteNotFound("Exchange rate service returned no quote.")
 
     expected_from = from_currency.upper()
     expected_to = to_currency.upper()
     expected_type = rate_type.upper()
-    quote = next((item for item in result if isinstance(item, dict)
+    matching_quotes = [item for item in result if isinstance(item, dict)
         and str(item.get("from_currency", "")).upper() == expected_from
         and str(item.get("to_currency", "")).upper() == expected_to
-        and str(item.get("rate_type", "")).upper() == expected_type), None)
-    if quote is None:
-        raise ValueError("Exchange rate service returned no matching quote.")
+        and str(item.get("rate_type", "")).upper() == expected_type]
+    if not matching_quotes:
+        raise ExchangeRateQuoteNotFound("Exchange rate service returned no matching quote.")
+
+    def quote_date(item: dict) -> date:
+        try:
+            return date.fromisoformat(str(item.get("rate_date", "")).replace("/", "-"))
+        except ValueError:
+            return date.min
+
+    quote = max(matching_quotes, key=quote_date)
 
     try:
         rate = Decimal(str(quote.get("rate_value")))
@@ -337,7 +451,8 @@ def exchange_rate(request: Request, currency: Currency, actor: Actor = Depends(g
     if currency == "USD":
         log_operation("exchange_rate_lookup", actor.id, count=0, duration_ms=(time.perf_counter() - started) * 1000,
                       request_id=request.state.request_id, message="USD base exchange rate returned.")
-        return {"currency": currency, "target_currency": "USD", "rate": "1.00000000", "fetched_at": fetched_at, "source": "USD base rate"}
+        return {"currency": currency, "target_currency": "USD", "rate": "1.00000000", "fetched_at": fetched_at,
+                "source": "USD base rate", "cached": True, "stale": False}
     enterprise_id = settings.exchange_rate_iam_enterprise_id.strip()
     tenant_id = settings.exchange_rate_tenant_id.strip() or enterprise_id
     rate_type = settings.exchange_rate_rate_type.strip()
@@ -353,17 +468,29 @@ def exchange_rate(request: Request, currency: Currency, actor: Actor = Depends(g
             "code": "EXCHANGE_RATE_NOT_CONFIGURED",
             "message": "Exchange rate service is not configured.",
         })
+    rate_cache_key = (currency, "USD", rate_type.upper(), tenant_id)
+    cached_rate = get_cached_exchange_rate(rate_cache_key, allow_stale=False)
+    if cached_rate:
+        log_operation("exchange_rate_lookup", actor.id, result="cache_hit", count=0,
+                      duration_ms=(time.perf_counter() - started) * 1000, request_id=request.state.request_id,
+                      message=f"Cached exchange rate returned; currency={currency}.")
+        return cached_rate
+
+    lookback_days = max(0, min(settings.exchange_rate_lookback_days, 31))
     request_payload = {
         "tenant_id": tenant_id,
         "curPage": "1",
-        "pageSize": "20",
+        "pageSize": str(max(20, lookback_days + 1)),
         "multi_rate_type_flag": "Y",
-        "data": [{
-            "from_currency": currency,
-            "to_currency": "USD",
-            "rate_type": rate_type,
-            "start_date": fetched_at.strftime("%Y/%m/%d"),
-        }],
+        "data": [
+            {
+                "from_currency": currency,
+                "to_currency": "USD",
+                "rate_type": rate_type,
+                "start_date": (fetched_at - timedelta(days=offset)).strftime("%Y/%m/%d"),
+            }
+            for offset in range(lookback_days + 1)
+        ],
     }
     token_payload = {
         "data": {
@@ -376,43 +503,16 @@ def exchange_rate(request: Request, currency: Currency, actor: Actor = Depends(g
             },
         },
     }
-    token_response = None
-    token_started = time.perf_counter()
     try:
-        token_response = httpx.post(
-            settings.exchange_rate_iam_token_url,
-            headers={"Content-Type": "application/json"},
-            json=token_payload,
-            follow_redirects=True,
-            timeout=settings.exchange_rate_timeout_seconds,
-        )
-        token_response.raise_for_status()
-        authorization_token = parse_iam_token_response(token_response)
-        log_integration_event(
+        authorization_token = get_iam_authorization(
             request_id=request.state.request_id,
             actor_id=actor.id,
-            service="huawei_iam",
-            operation="token_fetch",
-            result="success",
-            url=settings.exchange_rate_iam_token_url,
-            status=token_response.status_code,
-            duration_ms=(time.perf_counter() - token_started) * 1000,
-            message="Dynamic IAM token obtained; sensitive response content omitted.",
+            token_payload=token_payload,
+            account=iam_account,
+            project_id=iam_project_id,
+            enterprise_id=enterprise_id,
         )
     except (httpx.HTTPError, ValueError) as exc:
-        log_integration_event(
-            request_id=request.state.request_id,
-            actor_id=actor.id,
-            service="huawei_iam",
-            operation="token_fetch",
-            result="failed",
-            url=settings.exchange_rate_iam_token_url,
-            status=token_response.status_code if token_response is not None else "-",
-            duration_ms=(time.perf_counter() - token_started) * 1000,
-            response=summarize_http_response(token_response),
-            message="Failed to obtain dynamic IAM token.",
-            exc=exc,
-        )
         log_operation("exchange_rate_lookup", actor.id, result="failed:iam", count=0,
                       duration_ms=(time.perf_counter() - started) * 1000, request_id=request.state.request_id,
                       message=f"Exchange rate lookup failed during IAM authentication; currency={currency}.")
@@ -433,6 +533,16 @@ def exchange_rate(request: Request, currency: Currency, actor: Actor = Depends(g
         )
         rate_response.raise_for_status()
         rate, quoted_at = parse_exchange_rate_response(rate_response.json(), currency, "USD", rate_type)
+        response_payload = {
+            "currency": currency,
+            "target_currency": "USD",
+            "rate": str(rate),
+            "fetched_at": quoted_at or fetched_at,
+            "source": "Huawei iData Finance",
+            "cached": False,
+            "stale": False,
+        }
+        store_exchange_rate(rate_cache_key, response_payload)
         log_integration_event(
             request_id=request.state.request_id,
             actor_id=actor.id,
@@ -444,6 +554,32 @@ def exchange_rate(request: Request, currency: Currency, actor: Actor = Depends(g
             duration_ms=(time.perf_counter() - rate_started) * 1000,
             message=f"Exchange rate received; currency={currency}; target=USD; rate_type={rate_type}.",
         )
+    except ExchangeRateQuoteNotFound:
+        log_integration_event(
+            request_id=request.state.request_id,
+            actor_id=actor.id,
+            service="huawei_idata_finance",
+            operation="exchange_rate_fetch",
+            result="no_quote",
+            url=settings.exchange_rate_api_url,
+            status=rate_response.status_code if rate_response is not None else "-",
+            duration_ms=(time.perf_counter() - rate_started) * 1000,
+            response=summarize_http_response(rate_response),
+            message=f"No published exchange rate found; currency={currency}; target=USD; rate_type={rate_type}.",
+        )
+        stale_rate = get_cached_exchange_rate(rate_cache_key, allow_stale=True)
+        if stale_rate:
+            log_operation("exchange_rate_lookup", actor.id, result="stale_cache", count=0,
+                          duration_ms=(time.perf_counter() - started) * 1000, request_id=request.state.request_id,
+                          message=f"Stale cached exchange rate returned after an empty upstream result; currency={currency}.")
+            return stale_rate
+        log_operation("exchange_rate_lookup", actor.id, result="no_quote", count=0,
+                      duration_ms=(time.perf_counter() - started) * 1000, request_id=request.state.request_id,
+                      message=f"No published exchange rate found; currency={currency}.")
+        raise HTTPException(404, detail={
+            "code": "EXCHANGE_RATE_NOT_AVAILABLE",
+            "message": f"No published {currency}/USD exchange rate is available yet.",
+        })
     except (httpx.HTTPError, ValueError) as exc:
         log_integration_event(
             request_id=request.state.request_id,
@@ -458,6 +594,12 @@ def exchange_rate(request: Request, currency: Currency, actor: Actor = Depends(g
             message=f"Failed to obtain exchange rate; currency={currency}; target=USD; rate_type={rate_type}.",
             exc=exc,
         )
+        stale_rate = get_cached_exchange_rate(rate_cache_key, allow_stale=True)
+        if stale_rate:
+            log_operation("exchange_rate_lookup", actor.id, result="stale_cache", count=0,
+                          duration_ms=(time.perf_counter() - started) * 1000, request_id=request.state.request_id,
+                          message=f"Stale cached exchange rate returned after an upstream failure; currency={currency}.")
+            return stale_rate
         log_operation("exchange_rate_lookup", actor.id, result=f"failed:{type(exc).__name__}", count=0,
                       duration_ms=(time.perf_counter() - started) * 1000, request_id=request.state.request_id,
                       message=f"Exchange rate lookup failed; currency={currency}.")
@@ -467,13 +609,7 @@ def exchange_rate(request: Request, currency: Currency, actor: Actor = Depends(g
         }) from exc
     log_operation("exchange_rate_lookup", actor.id, count=0, duration_ms=(time.perf_counter() - started) * 1000,
                   request_id=request.state.request_id, message=f"Exchange rate lookup succeeded; currency={currency}.")
-    return {
-        "currency": currency,
-        "target_currency": "USD",
-        "rate": str(rate),
-        "fetched_at": quoted_at or fetched_at,
-        "source": "Huawei iData Finance",
-    }
+    return response_payload
 
 
 @app.get("/api/projects", response_model=PaginatedProjects)

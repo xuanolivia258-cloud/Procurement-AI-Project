@@ -1,9 +1,17 @@
 import httpx
+import pytest
 from pydantic import SecretStr
 
 from app.config import settings
 from app.logging_config import summarize_http_response
-from app.main import parse_exchange_rate_response, parse_iam_token_response
+from app.main import clear_exchange_rate_caches, parse_exchange_rate_response, parse_iam_token_response
+
+
+@pytest.fixture(autouse=True)
+def reset_exchange_rate_caches():
+    clear_exchange_rate_caches()
+    yield
+    clear_exchange_rate_caches()
 
 
 def configure_iam(monkeypatch):
@@ -49,10 +57,16 @@ def test_integration_response_summary_redacts_secrets_and_tokens():
 
 
 def test_exchange_rate_response_parser():
-    payload = {"status": 200, "message": "success", "data": {"result": [{
-        "from_currency": "CAD", "to_currency": "USD", "rate_type": "SPOT",
-        "rate_date": "2026-08-24", "rate_value": "0.7185",
-    }]}}
+    payload = {"status": 200, "message": "success", "data": {"result": [
+        {
+            "from_currency": "CAD", "to_currency": "USD", "rate_type": "SPOT",
+            "rate_date": "2026-08-23", "rate_value": "0.7100",
+        },
+        {
+            "from_currency": "CAD", "to_currency": "USD", "rate_type": "SPOT",
+            "rate_date": "2026-08-24", "rate_value": "0.7185",
+        },
+    ]}}
     rate, quoted_at = parse_exchange_rate_response(payload, "CAD", "USD", "SPOT")
     assert str(rate) == "0.7185"
     assert quoted_at.isoformat() == "2026-08-24T00:00:00+00:00"
@@ -95,6 +109,8 @@ def test_exchange_rate_calls_idata_finance(client, monkeypatch):
     assert calls[1][1]["json"]["data"][0]["from_currency"] == "CNY"
     assert calls[1][1]["json"]["data"][0]["to_currency"] == "USD"
     assert calls[1][1]["json"]["data"][0]["rate_type"] == "SPOT"
+    assert len(calls[1][1]["json"]["data"]) == settings.exchange_rate_lookback_days + 1
+    assert len({item["start_date"] for item in calls[1][1]["json"]["data"]}) == settings.exchange_rate_lookback_days + 1
     assert [(event["service"], event["operation"], event["result"], event["status"])
             for event in integration_events] == [
         ("huawei_iam", "token_fetch", "success", 200),
@@ -102,6 +118,89 @@ def test_exchange_rate_calls_idata_finance(client, monkeypatch):
     ]
     assert "dynamic-token" not in repr(integration_events)
     assert "test-secret" not in repr(integration_events)
+
+
+def test_exchange_rate_reuses_token_and_rate_caches(client, monkeypatch):
+    configure_iam(monkeypatch)
+    calls = []
+
+    def post(url, **kwargs):
+        calls.append(url)
+        request = httpx.Request("POST", url)
+        if url == settings.exchange_rate_iam_token_url:
+            return httpx.Response(200, request=request, json={
+                "data": {"attributes": {"token": "dynamic-token"}},
+            })
+        currency = kwargs["json"]["data"][0]["from_currency"]
+        return httpx.Response(200, request=request, json={
+            "status": 200, "message": "success", "data": {"result": [{
+                "from_currency": currency, "to_currency": "USD", "rate_type": "SPOT",
+                "rate_date": "2026-08-24", "rate_value": "0.7185",
+            }]},
+        })
+
+    monkeypatch.setattr(httpx, "post", post)
+
+    first = client.get("/api/exchange-rate?currency=CAD")
+    second = client.get("/api/exchange-rate?currency=CAD")
+    third = client.get("/api/exchange-rate?currency=CNY")
+
+    assert first.status_code == second.status_code == third.status_code == 200
+    assert second.json()["cached"] is True
+    assert calls == [settings.exchange_rate_iam_token_url, settings.exchange_rate_api_url,
+                     settings.exchange_rate_api_url]
+
+
+def test_exchange_rate_reports_no_published_quote_without_generic_502(client, monkeypatch):
+    configure_iam(monkeypatch)
+    token_request = httpx.Request("POST", settings.exchange_rate_iam_token_url)
+    rate_request = httpx.Request("POST", settings.exchange_rate_api_url)
+    responses = [
+        httpx.Response(200, request=token_request, json={"data": {"attributes": {"token": "dynamic-token"}}}),
+        httpx.Response(200, request=rate_request, json={
+            "status": 200, "message": "success", "data": {"result": []},
+        }),
+    ]
+    monkeypatch.setattr(httpx, "post", lambda *_args, **_kwargs: responses.pop(0))
+
+    response = client.get("/api/exchange-rate?currency=CAD")
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "EXCHANGE_RATE_NOT_AVAILABLE"
+
+
+def test_exchange_rate_uses_last_rate_when_refresh_has_no_quote(client, monkeypatch):
+    configure_iam(monkeypatch)
+    monkeypatch.setattr(settings, "exchange_rate_cache_seconds", 0)
+    monkeypatch.setattr(settings, "exchange_rate_stale_seconds", 3600)
+    rate_calls = 0
+
+    def post(url, **_kwargs):
+        nonlocal rate_calls
+        request = httpx.Request("POST", url)
+        if url == settings.exchange_rate_iam_token_url:
+            return httpx.Response(200, request=request, json={
+                "data": {"attributes": {"token": "dynamic-token"}},
+            })
+        rate_calls += 1
+        result = [{
+            "from_currency": "CAD", "to_currency": "USD", "rate_type": "SPOT",
+            "rate_date": "2026-08-24", "rate_value": "0.7185",
+        }] if rate_calls == 1 else []
+        return httpx.Response(200, request=request, json={
+            "status": 200, "message": "success", "data": {"result": result},
+        })
+
+    monkeypatch.setattr(httpx, "post", post)
+
+    initial = client.get("/api/exchange-rate?currency=CAD")
+    fallback = client.get("/api/exchange-rate?currency=CAD")
+
+    assert initial.status_code == fallback.status_code == 200
+    assert fallback.json()["rate"] == "0.7185"
+    assert fallback.json()["cached"] is True
+    assert fallback.json()["stale"] is True
+    assert rate_calls == 2
 
 
 def test_exchange_rate_requires_tenant_configuration(client, monkeypatch):

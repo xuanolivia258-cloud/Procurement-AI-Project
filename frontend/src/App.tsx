@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, NavLink, Route, Routes, useLocation, useSearchParams } from 'react-router-dom';
@@ -43,7 +43,7 @@ const zhLabels: Record<string, string> = {
   'Restore selected': '恢复所选项目', 'Permanently delete': '永久删除', 'Deleted At': '删除时间', Restore: '恢复', 'Delete permanently': '永久删除',
   'PROCUREMENT PROJECT': '采购项目', 'Copy Project': '复制项目', Close: '关闭', 'Discard unsaved changes?': '确定放弃未保存的更改吗？', Select: '请选择', Existing: '现有', Saving: '正在保存', FINAL: '最终节点',
   'Project Basics': '项目基本信息', 'Ownership, priority and request context': '负责人、优先级及申请信息', BU: 'BU', 'Request Date': '申请日期', Description: '项目描述', Budget: '预算',
-  'Original budget and live USD conversion': '原始预算及实时美元换算', 'Exchange Rate': '汇率', 'Loading exchange rate…': '正在加载汇率…', 'Select currency': '请选择币种', 'Exchange rate service unavailable': '汇率服务暂不可用', 'Rate source': '汇率来源', 'USD base rate': '美元基准汇率',
+  'Original budget and live USD conversion': '原始预算及实时美元换算', 'Exchange Rate': '汇率', 'Loading exchange rate…': '正在加载汇率…', 'Select currency': '请选择币种', 'Rate unavailable': '暂无汇率', 'Exchange rate service unavailable': '汇率服务暂不可用', 'No published exchange rate is available yet.': '暂时没有已发布的汇率。', 'Retry': '重试', 'Rate source': '汇率来源', 'USD base rate': '美元基准汇率', 'Rate date': '汇率日期', 'Using last available rate': '正在使用最近一次可用汇率', 'Cached for faster loading': '已缓存，可快速加载',
   'Supplier & Procurement': '供应商与采购', 'Supplier profile, sourcing approach and current status': '供应商信息、采购策略和当前状态', 'Supplier Type': '供应商类型', 'Procurement Strategy': '采购策略', 'Procurement Status Notes': '采购状态备注', inactive: '已停用',
   'Timeline & Compliance': '时间与合规', 'Approval milestones, compliance and final PO release': '审批节点、合规信息及最终 PO 发布', 'PR Approved Date': 'PR 批准日期', 'Estimated Project Closing Date': '预计项目结束日期', 'EC Form': 'EC 表单', 'Contract Required': '是否需要合同', 'PO Release Date': 'PO 发布日期',
   Sourcing: '寻源', Qualification: '资格审查', Selection: '供应商选择', Contract: '合同审核', 'PO Release': 'PO 发布', 'Project Lifecycle': '项目生命周期', 'Overdue Days': '逾期天数', 'Not available': '暂无', 'business days': '个工作日',
@@ -391,25 +391,43 @@ function ProjectDialog({ project, copyMode = false, language, close }: { project
   const { register, handleSubmit, setValue, watch, formState: { isDirty } } = useForm<ProjectInput>({ defaultValues: defaults });
   const currency = watch('currency');
   const budget = watch('budget');
+  const currentRate = watch('exchange_rate');
+  const previousCurrency = useRef(currency);
   const ceg = watch('ceg');
   const procurementStatus = watch('procurement_status');
   const prApprovedDate = watch('pr_approved_date');
   const estimatedClosingDate = watch('estimated_closing_date');
   const poReleaseDate = watch('po_release_date');
-  const { data: liveRate, isFetching: rateLoading, error: rateError } = useQuery({
+  const { data: liveRate, isFetching: rateLoading, error: rateError, refetch: retryRate } = useQuery({
     queryKey: ['exchange-rate', currency],
-    queryFn: () => api<{ rate: string; fetched_at: string }>(`/api/exchange-rate?currency=${currency}`),
-    enabled: Boolean(currency), staleTime: 5 * 60 * 1000,
+    queryFn: ({ signal }) => api<{ currency: string; rate: string; fetched_at: string; source: string; cached: boolean; stale: boolean }>(`/api/exchange-rate?currency=${currency}`, { signal }),
+    enabled: Boolean(currency && currency !== 'USD'),
+    staleTime: 30 * 60 * 1000,
+    retry: false,
+    refetchOnWindowFocus: false,
   });
   useEffect(() => {
-    if (!liveRate) return;
+    if (previousCurrency.current === currency) return;
+    previousCurrency.current = currency;
+    if (currency === 'USD') {
+      setValue('exchange_rate', '1.00000000', { shouldDirty: true });
+      setValue('exchange_rate_at', new Date().toISOString(), { shouldDirty: true });
+      return;
+    }
+    setValue('exchange_rate', '', { shouldDirty: true });
+    setValue('exchange_rate_at', '', { shouldDirty: true });
+  }, [currency, setValue]);
+  useEffect(() => {
+    if (!liveRate || liveRate.currency !== currency) return;
     setValue('exchange_rate', liveRate.rate, { shouldDirty: true });
     setValue('exchange_rate_at', liveRate.fetched_at, { shouldDirty: true });
-  }, [liveRate, setValue]);
+  }, [currency, liveRate, setValue]);
   useEffect(() => {
-    const amount = Number(budget); const rate = Number(liveRate?.rate || watch('exchange_rate'));
+    const amount = Number(budget); const rate = Number(currentRate);
     setValue('usd_amount', budget && rate ? (Math.round((amount * rate + Number.EPSILON) * 100) / 100).toFixed(2) : '', { shouldDirty: Boolean(budget) });
-  }, [budget, liveRate, setValue, watch]);
+  }, [budget, currentRate, setValue]);
+  const noPublishedRate = rateError instanceof ApiError && rateError.code === 'EXCHANGE_RATE_NOT_AVAILABLE';
+  const rateDate = liveRate?.fetched_at ? new Date(liveRate.fetched_at).toLocaleDateString(language === 'zh' ? 'zh-CN' : undefined) : '';
   const capitalizeOnBlur = (field: 'ceg' | 'bu' | 'requestor' | 'description' | 'supplier_name' | 'procurement_status_notes') => (event: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const value = event.currentTarget.value.trim();
     const formatted = /^[a-z]/.test(value) ? value[0].toUpperCase() + value.slice(1) : value;
@@ -431,7 +449,11 @@ function ProjectDialog({ project, copyMode = false, language, close }: { project
       <section className="form-section financial-section"><SectionHeading number="02" title={tr(language, 'Budget')} description={tr(language, 'Original budget and live USD conversion')} /><div className="form-grid">
         <Field label={tr(language, 'Amount (excl.tax)')}><input type="text" inputMode="decimal" pattern="[0-9]+([.][0-9]*)?" placeholder="0.00" {...register('budget')} onBlur={(event) => { const value = event.currentTarget.value.trim(); if (value && /^\d+(\.\d*)?$/.test(value)) { const formatted = (Math.round((Number(value) + Number.EPSILON) * 100) / 100).toFixed(2); event.currentTarget.value = formatted; setValue('budget', formatted, { shouldDirty: true, shouldValidate: true }); } }} /></Field>
         <Field label={tr(language, 'Currency')}><select {...register('currency')}><option value="">{tr(language, 'Select')}</option><option>CAD</option><option>USD</option><option>CNY</option><option>EUR</option></select></Field>
-        <Field label={tr(language, 'Exchange Rate')}><input readOnly {...register('exchange_rate')} placeholder={tr(language, rateLoading ? 'Loading exchange rate…' : 'Select currency')} />{rateError && <small className="field-error">{tr(language, 'Exchange rate service unavailable')}</small>}<small className="rate-source">{tr(language, 'Rate source')}: {currency === 'USD' ? tr(language, 'USD base rate') : 'Huawei iData Finance'}</small></Field>
+        <Field label={tr(language, 'Exchange Rate')}><input readOnly aria-busy={rateLoading} {...register('exchange_rate')} placeholder={tr(language, rateLoading ? 'Loading exchange rate…' : rateError ? 'Rate unavailable' : 'Select currency')} />
+          {rateLoading && !currentRate && <small className="rate-feedback loading">{tr(language, 'Loading exchange rate…')}</small>}
+          {rateError && <div className="rate-feedback error" role="status"><span>{currency}{language === 'zh' ? '：' : ': '}{tr(language, noPublishedRate ? 'No published exchange rate is available yet.' : 'Exchange rate service unavailable')}</span><button type="button" onClick={() => retryRate()}>{tr(language, 'Retry')}</button></div>}
+          {(currency === 'USD' || liveRate) && <small className={`rate-source${liveRate?.stale ? ' stale' : ''}`}>{tr(language, 'Rate source')}: {currency === 'USD' ? tr(language, 'USD base rate') : liveRate?.source || 'Huawei iData Finance'}{rateDate && ` · ${tr(language, 'Rate date')}: ${rateDate}`}{liveRate?.stale ? ` · ${tr(language, 'Using last available rate')}` : liveRate?.cached ? ` · ${tr(language, 'Cached for faster loading')}` : ''}</small>}
+        </Field>
         <Field label={tr(language, 'USD Amount')}><input readOnly {...register('usd_amount')} placeholder="0.00" /></Field>
         <input type="hidden" {...register('exchange_rate_at')} />
       </div></section>

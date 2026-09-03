@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     exchange_rate_tenant_id: str = ""
     exchange_rate_rate_type: str = "SPOT"
     exchange_rate_timeout_seconds: float = 10.0
+    exchange_rate_lookback_days: int = 7
+    exchange_rate_cache_seconds: int = 30 * 60
+    exchange_rate_stale_seconds: int = 24 * 60 * 60
+    exchange_rate_iam_token_cache_seconds: int = 5 * 60
     exchange_rate_iam_token_url: str = "https://iam.his-op.huawei.com/iam/auth/token"
     exchange_rate_iam_account: str = ""
     exchange_rate_iam_secret: SecretStr = SecretStr("")

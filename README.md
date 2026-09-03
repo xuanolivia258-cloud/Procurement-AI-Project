@@ -63,6 +63,8 @@ Configure `EXCHANGE_RATE_IAM_ACCOUNT`, `EXCHANGE_RATE_IAM_SECRET`, `EXCHANGE_RAT
 
 IAM and exchange-rate calls log their upstream URL, HTTP status, duration, failure type, and a truncated, secret-redacted response summary. In Docker, follow the console log with `docker compose logs -f backend`. The same diagnostics are written to `/app/data/logs/backend-integrations.log` in the backend data volume; the path and response limit are configurable with `INTEGRATION_LOG_FILE` and `INTEGRATION_LOG_RESPONSE_MAX_CHARS`.
 
+To avoid an empty result when today's rate has not been published, each upstream request asks for the current date and the previous seven calendar days, then uses the newest matching quote. IAM tokens are cached for five minutes and successful rates for thirty minutes. If refreshing a previously cached rate fails, the last rate can be reused for up to twenty-four hours and is marked as stale in the UI. These windows are configurable with `EXCHANGE_RATE_LOOKBACK_DAYS`, `EXCHANGE_RATE_IAM_TOKEN_CACHE_SECONDS`, `EXCHANGE_RATE_CACHE_SECONDS`, and `EXCHANGE_RATE_STALE_SECONDS`.
+
 ## Database changes and tests
 
 Create and apply a migration from `backend/`:
