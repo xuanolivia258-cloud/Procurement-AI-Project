@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     exchange_rate_tenant_id: str = ""
     exchange_rate_rate_type: str = "SPOT"
     exchange_rate_timeout_seconds: float = 10.0
-    exchange_rate_iam_token_url: str = "https://iam.his-op-beta.huawei.com/iam/auth/token"
+    exchange_rate_iam_token_url: str = "https://iam.his-op.huawei.com/iam/auth/token"
     exchange_rate_iam_account: str = ""
     exchange_rate_iam_secret: SecretStr = SecretStr("")
     exchange_rate_iam_project_id: str = ""
