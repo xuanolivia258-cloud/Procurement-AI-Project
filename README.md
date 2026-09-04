@@ -59,7 +59,7 @@ The Vite development server proxies `/api` to `http://localhost:8000` by default
 
 The Budget section requests live rates from the backend. Before every non-USD lookup, the backend obtains a dynamic IAM token and then sends that token in the exchange-rate request's `Authorization` header.
 
-Configure `EXCHANGE_RATE_IAM_ACCOUNT`, `EXCHANGE_RATE_IAM_SECRET`, `EXCHANGE_RATE_IAM_PROJECT_ID`, and `EXCHANGE_RATE_IAM_ENTERPRISE_ID` in the runtime environment. Configure `EXCHANGE_RATE_TENANT_ID` when the exchange-rate tenant differs from the IAM enterprise ID; otherwise the enterprise ID is reused. Never commit the real IAM secret. The default IAM and exchange-rate URLs are configurable through `EXCHANGE_RATE_IAM_TOKEN_URL` and `EXCHANGE_RATE_API_URL`; `EXCHANGE_RATE_RATE_TYPE` defaults to `SPOT-SATE`.
+Configure `EXCHANGE_RATE_IAM_ACCOUNT`, `EXCHANGE_RATE_IAM_SECRET`, `EXCHANGE_RATE_IAM_PROJECT_ID`, and `EXCHANGE_RATE_IAM_ENTERPRISE_ID` in the runtime environment. Configure `EXCHANGE_RATE_TENANT_ID` when the exchange-rate tenant differs from the IAM enterprise ID; otherwise the enterprise ID is reused. Never commit the real IAM secret. The default IAM and exchange-rate URLs are configurable through `EXCHANGE_RATE_IAM_TOKEN_URL` and `EXCHANGE_RATE_API_URL`; `EXCHANGE_RATE_RATE_TYPE` defaults to `SPOT-SAFE`.
 
 IAM and exchange-rate calls log their upstream URL, HTTP status, duration, failure type, and a truncated, secret-redacted response summary. In Docker, follow the console log with `docker compose logs -f backend`. The same diagnostics are written to `/app/data/logs/backend-integrations.log` in the backend data volume; the path and response limit are configurable with `INTEGRATION_LOG_FILE` and `INTEGRATION_LOG_RESPONSE_MAX_CHARS`.
 

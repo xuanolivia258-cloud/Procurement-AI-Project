@@ -59,15 +59,15 @@ def test_integration_response_summary_redacts_secrets_and_tokens():
 def test_exchange_rate_response_parser():
     payload = {"status": 200, "message": "success", "data": {"result": [
         {
-            "from_currency": "CAD", "to_currency": "USD", "rate_type": "SPOT-SATE",
+            "from_currency": "CAD", "to_currency": "USD", "rate_type": "SPOT-SAFE",
             "rate_date": "2026-08-23", "rate_value": "0.7100",
         },
         {
-            "from_currency": "CAD", "to_currency": "USD", "rate_type": "SPOT-SATE",
+            "from_currency": "CAD", "to_currency": "USD", "rate_type": "SPOT-SAFE",
             "rate_date": "2026-08-24", "rate_value": "0.7185",
         },
     ]}}
-    rate, quoted_at = parse_exchange_rate_response(payload, "CAD", "USD", "SPOT-SATE")
+    rate, quoted_at = parse_exchange_rate_response(payload, "CAD", "USD", "SPOT-SAFE")
     assert str(rate) == "0.7185"
     assert quoted_at.isoformat() == "2026-08-24T00:00:00+00:00"
 
@@ -83,7 +83,7 @@ def test_exchange_rate_calls_idata_finance(client, monkeypatch):
     rate_request = httpx.Request("POST", settings.exchange_rate_api_url)
     rate_response = httpx.Response(200, request=rate_request, json={
         "status": 200, "message": "success", "data": {"result": [{
-            "from_currency": "CNY", "to_currency": "USD", "rate_type": "SPOT-SATE",
+            "from_currency": "CNY", "to_currency": "USD", "rate_type": "SPOT-SAFE",
             "rate_date": "2026-08-24", "rate_value": "0.139245",
         }]},
     })
@@ -108,7 +108,7 @@ def test_exchange_rate_calls_idata_finance(client, monkeypatch):
     assert calls[1][1]["json"]["multi_rate_type_flag"] == "Y"
     assert calls[1][1]["json"]["data"][0]["from_currency"] == "CNY"
     assert calls[1][1]["json"]["data"][0]["to_currency"] == "USD"
-    assert calls[1][1]["json"]["data"][0]["rate_type"] == "SPOT-SATE"
+    assert calls[1][1]["json"]["data"][0]["rate_type"] == "SPOT-SAFE"
     assert len(calls[1][1]["json"]["data"]) == settings.exchange_rate_lookback_days + 1
     assert len({item["start_date"] for item in calls[1][1]["json"]["data"]}) == settings.exchange_rate_lookback_days + 1
     assert [(event["service"], event["operation"], event["result"], event["status"])
@@ -134,7 +134,7 @@ def test_exchange_rate_reuses_token_and_rate_caches(client, monkeypatch):
         currency = kwargs["json"]["data"][0]["from_currency"]
         return httpx.Response(200, request=request, json={
             "status": 200, "message": "success", "data": {"result": [{
-                "from_currency": currency, "to_currency": "USD", "rate_type": "SPOT-SATE",
+                "from_currency": currency, "to_currency": "USD", "rate_type": "SPOT-SAFE",
                 "rate_date": "2026-08-24", "rate_value": "0.7185",
             }]},
         })
@@ -184,7 +184,7 @@ def test_exchange_rate_uses_last_rate_when_refresh_has_no_quote(client, monkeypa
             })
         rate_calls += 1
         result = [{
-            "from_currency": "CAD", "to_currency": "USD", "rate_type": "SPOT-SATE",
+            "from_currency": "CAD", "to_currency": "USD", "rate_type": "SPOT-SAFE",
             "rate_date": "2026-08-24", "rate_value": "0.7185",
         }] if rate_calls == 1 else []
         return httpx.Response(200, request=request, json={

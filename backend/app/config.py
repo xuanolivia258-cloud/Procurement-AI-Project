@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173,http://localhost:8080"
     exchange_rate_api_url: str = "https://apig.his.huawei.com/api/idata/fin/v2/projects/com.huawei.caplatform/getBatchRatemsRateList"
     exchange_rate_tenant_id: str = ""
-    exchange_rate_rate_type: str = "SPOT-SATE"
+    exchange_rate_rate_type: str = "SPOT-SAFE"
     exchange_rate_timeout_seconds: float = 10.0
     exchange_rate_lookback_days: int = 7
     exchange_rate_cache_seconds: int = 30 * 60
