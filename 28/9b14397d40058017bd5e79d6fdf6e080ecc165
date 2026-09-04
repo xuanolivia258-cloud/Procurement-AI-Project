@@ -1,0 +1,22 @@
+.env.example
+  h_546c22315960fe 7
+README.md
+  h_546c22315960fe 62
+backend/app/config.py
+  h_546c22315960fe 16
+backend/tests/test_exchange_rate.py
+  h_546c22315960fe 62,66,70,86,111,137,187
+docker-compose.yml
+  h_546c22315960fe 11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "289b14397d40058017bd5e79d6fdf6e080ecc165",
+  "prompts": {},
+  "humans": {
+    "h_546c22315960fe": {
+      "author": "lisen (F) <l00477035@china.huawei.com>"
+    }
+  }
+}
