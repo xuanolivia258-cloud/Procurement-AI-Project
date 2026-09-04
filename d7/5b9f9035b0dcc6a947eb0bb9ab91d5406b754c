@@ -1,0 +1,18 @@
+README.md
+  h_546c22315960fe 66
+backend/app/main.py
+  h_546c22315960fe 44-46,454,494,559-561,574-575
+backend/tests/test_exchange_rate.py
+  h_546c22315960fe 1-2,9-14,84,120-121
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "d75b9f9035b0dcc6a947eb0bb9ab91d5406b754c",
+  "prompts": {},
+  "humans": {
+    "h_546c22315960fe": {
+      "author": "lisen (F) <l00477035@china.huawei.com>"
+    }
+  }
+}
