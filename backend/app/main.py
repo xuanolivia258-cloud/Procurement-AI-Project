@@ -41,6 +41,9 @@ from .schemas import (
 )
 
 
+EXCHANGE_RATE_BUSINESS_TIMEZONE = timezone(timedelta(hours=8), "Asia/Shanghai")
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     Base.metadata.create_all(bind=engine)
@@ -448,6 +451,7 @@ def parse_exchange_rate_response(
 def exchange_rate(request: Request, currency: Currency, actor: Actor = Depends(get_actor)):
     started = time.perf_counter()
     fetched_at = datetime.now(timezone.utc)
+    business_now = datetime.now(EXCHANGE_RATE_BUSINESS_TIMEZONE)
     if currency == "USD":
         log_operation("exchange_rate_lookup", actor.id, count=0, duration_ms=(time.perf_counter() - started) * 1000,
                       request_id=request.state.request_id, message="USD base exchange rate returned.")
@@ -487,7 +491,7 @@ def exchange_rate(request: Request, currency: Currency, actor: Actor = Depends(g
                 "from_currency": currency,
                 "to_currency": "USD",
                 "rate_type": rate_type,
-                "start_date": (fetched_at - timedelta(days=offset)).strftime("%Y/%m/%d"),
+                "start_date": (business_now - timedelta(days=offset)).strftime("%Y/%m/%d"),
             }
             for offset in range(lookback_days + 1)
         ],
@@ -552,7 +556,9 @@ def exchange_rate(request: Request, currency: Currency, actor: Actor = Depends(g
             url=settings.exchange_rate_api_url,
             status=rate_response.status_code,
             duration_ms=(time.perf_counter() - rate_started) * 1000,
-            message=f"Exchange rate received; currency={currency}; target=USD; rate_type={rate_type}.",
+            message=(f"Exchange rate received; currency={currency}; target=USD; rate_type={rate_type}; "
+                     f"requested_date={business_now.date().isoformat()}; "
+                     f"quoted_date={(quoted_at or fetched_at).date().isoformat()}."),
         )
     except ExchangeRateQuoteNotFound:
         log_integration_event(
@@ -565,7 +571,8 @@ def exchange_rate(request: Request, currency: Currency, actor: Actor = Depends(g
             status=rate_response.status_code if rate_response is not None else "-",
             duration_ms=(time.perf_counter() - rate_started) * 1000,
             response=summarize_http_response(rate_response),
-            message=f"No published exchange rate found; currency={currency}; target=USD; rate_type={rate_type}.",
+            message=(f"No published exchange rate found; currency={currency}; target=USD; rate_type={rate_type}; "
+                     f"requested_date={business_now.date().isoformat()}."),
         )
         stale_rate = get_cached_exchange_rate(rate_cache_key, allow_stale=True)
         if stale_rate:

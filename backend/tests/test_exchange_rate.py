@@ -1,10 +1,17 @@
+from datetime import datetime
+
 import httpx
 import pytest
 from pydantic import SecretStr
 
 from app.config import settings
 from app.logging_config import summarize_http_response
-from app.main import clear_exchange_rate_caches, parse_exchange_rate_response, parse_iam_token_response
+from app.main import (
+    EXCHANGE_RATE_BUSINESS_TIMEZONE,
+    clear_exchange_rate_caches,
+    parse_exchange_rate_response,
+    parse_iam_token_response,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -74,6 +81,7 @@ def test_exchange_rate_response_parser():
 
 def test_exchange_rate_calls_idata_finance(client, monkeypatch):
     configure_iam(monkeypatch)
+    business_date_before = datetime.now(EXCHANGE_RATE_BUSINESS_TIMEZONE).strftime("%Y/%m/%d")
     integration_events = []
     monkeypatch.setattr("app.main.log_integration_event", lambda **kwargs: integration_events.append(kwargs))
     token_request = httpx.Request("POST", settings.exchange_rate_iam_token_url)
@@ -109,6 +117,8 @@ def test_exchange_rate_calls_idata_finance(client, monkeypatch):
     assert calls[1][1]["json"]["data"][0]["from_currency"] == "CNY"
     assert calls[1][1]["json"]["data"][0]["to_currency"] == "USD"
     assert calls[1][1]["json"]["data"][0]["rate_type"] == "SPOT-SAFE"
+    business_date_after = datetime.now(EXCHANGE_RATE_BUSINESS_TIMEZONE).strftime("%Y/%m/%d")
+    assert calls[1][1]["json"]["data"][0]["start_date"] in {business_date_before, business_date_after}
     assert len(calls[1][1]["json"]["data"]) == settings.exchange_rate_lookback_days + 1
     assert len({item["start_date"] for item in calls[1][1]["json"]["data"]}) == settings.exchange_rate_lookback_days + 1
     assert [(event["service"], event["operation"], event["result"], event["status"])
