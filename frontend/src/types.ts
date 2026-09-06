@@ -1,5 +1,18 @@
 export type Lifecycle = 'active' | 'completed';
 
+export interface Actor {
+  id: string;
+  name: string;
+  role: 'admin' | 'editor' | 'viewer';
+}
+
+export interface AuthStatus {
+  authenticated: boolean;
+  mode: 'disabled' | 'w3';
+  actor: Actor | null;
+  login_url?: string;
+}
+
 export interface ProjectInput {
   project_priority: '' | 'Normal' | 'Medium' | 'High';
   ceg: string;

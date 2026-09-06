@@ -3,9 +3,29 @@ services:
     build: ./backend
     environment:
       DATABASE_URL: sqlite:////app/data/procurement.db
-      AUTH_MODE: disabled
+      # Runtime switch from root .env; recreate backend/frontend after changing it.
+      AUTH_MODE: ${AUTH_MODE:-disabled}
       LOCAL_ACTOR_ID: local-test-user
       LOCAL_ACTOR_NAME: Local Test User
+      SITE_URL: ${SITE_URL:-http://localhost:8080/ai_procurement}
+      TRUSTED_HOSTS: ${TRUSTED_HOSTS:-localhost,127.0.0.1,testserver,cari.rnd.huawei.com}
+      SESSION_SECRET: ${SESSION_SECRET:-dev-only-change-me}
+      SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-cari_session}
+      SESSION_COOKIE_PATH: ${SESSION_COOKIE_PATH:-/ai_procurement}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      SESSION_MAX_AGE_SECONDS: ${SESSION_MAX_AGE_SECONDS:-28800}
+      W3_CLIENT_ID: ${W3_CLIENT_ID:-}
+      W3_CLIENT_SECRET: ${W3_CLIENT_SECRET:-}
+      W3_AUTHORIZE_URL: ${W3_AUTHORIZE_URL:-https://uniportal.huawei.com/saaslogin1/oauth2/authorize}
+      W3_ACCESS_TOKEN_URL: ${W3_ACCESS_TOKEN_URL:-https://uniportal.huawei.com/saaslogin1/oauth2/accesstoken}
+      W3_REFRESH_TOKEN_URL: ${W3_REFRESH_TOKEN_URL:-https://uniportal.huawei.com/saaslogin1/oauth2/refreshtoken}
+      W3_USERINFO_URL: ${W3_USERINFO_URL:-https://uniportal.huawei.com/saaslogin1/oauth2/userinfo}
+      W3_LOGOUT_URL: ${W3_LOGOUT_URL:-https://uniportal.huawei.com/saaslogin1/oauth2/logout}
+      W3_SCOPE: ${W3_SCOPE:-base.profile}
+      W3_REDIRECT_URI: ${W3_REDIRECT_URI:-https://cari.rnd.huawei.com/ai_procurement/authorize}
+      W3_REQUEST_TIMEOUT_SECONDS: ${W3_REQUEST_TIMEOUT_SECONDS:-10}
+      W3_VERIFY_SSL: ${W3_VERIFY_SSL:-true}
+      W3_DEFAULT_ROLE: ${W3_DEFAULT_ROLE:-admin}
       EXCHANGE_RATE_API_URL: ${EXCHANGE_RATE_API_URL:-https://apig.his.huawei.com/api/idata/fin/v2/projects/com.huawei.caplatform/getBatchRatemsRateList}
       EXCHANGE_RATE_TENANT_ID: ${EXCHANGE_RATE_TENANT_ID:-}
       EXCHANGE_RATE_RATE_TYPE: ${EXCHANGE_RATE_RATE_TYPE:-SPOT-SAFE}
@@ -29,7 +49,7 @@ services:
     volumes:
       - procurement_data:/app/data
     ports:
-      - "8000:8000"
+      - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
       interval: 10s
@@ -42,7 +62,7 @@ services:
       backend:
         condition: service_healthy
     ports:
-      - "8080:80"
+      - "127.0.0.1:${FRONTEND_PORT:-8080}:80"
 
 volumes:
   procurement_data:

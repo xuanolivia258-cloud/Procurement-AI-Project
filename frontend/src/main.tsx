@@ -6,7 +6,8 @@ import App from './App';
 import './styles.css';
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: 15_000, retry: 1 } } });
+const routerBase = (import.meta.env.BASE_URL || '/').replace(/\/$/, '') || undefined;
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode><QueryClientProvider client={queryClient}><BrowserRouter><App /></BrowserRouter></QueryClientProvider></React.StrictMode>,
+  <React.StrictMode><QueryClientProvider client={queryClient}><BrowserRouter basename={routerBase}><App /></BrowserRouter></QueryClientProvider></React.StrictMode>,
 );

@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Literal
 
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -7,9 +8,28 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     app_name: str = "CARI Procurement Project Tracking"
     database_url: str = "sqlite:///./data/procurement.db"
-    auth_mode: str = "disabled"
+    auth_mode: Literal["disabled", "w3"] = "disabled"
     local_actor_id: str = "local-test-user"
     local_actor_name: str = "Local Test User"
+    site_url: str = "http://localhost:8080/ai_procurement"
+    trusted_hosts: str = "localhost,127.0.0.1,testserver,cari.rnd.huawei.com"
+    session_secret: SecretStr = SecretStr("dev-only-change-me")
+    session_cookie_name: str = "cari_session"
+    session_cookie_path: str = "/ai_procurement"
+    session_cookie_secure: bool = False
+    session_max_age_seconds: int = 8 * 60 * 60
+    w3_client_id: str = ""
+    w3_client_secret: SecretStr = SecretStr("")
+    w3_authorize_url: str = "https://uniportal.huawei.com/saaslogin1/oauth2/authorize"
+    w3_access_token_url: str = "https://uniportal.huawei.com/saaslogin1/oauth2/accesstoken"
+    w3_refresh_token_url: str = "https://uniportal.huawei.com/saaslogin1/oauth2/refreshtoken"
+    w3_userinfo_url: str = "https://uniportal.huawei.com/saaslogin1/oauth2/userinfo"
+    w3_logout_url: str = "https://uniportal.huawei.com/saaslogin1/oauth2/logout"
+    w3_scope: str = "base.profile"
+    w3_redirect_uri: str = "https://cari.rnd.huawei.com/ai_procurement/authorize"
+    w3_request_timeout_seconds: float = 10.0
+    w3_verify_ssl: bool = True
+    w3_default_role: Literal["admin", "editor", "viewer"] = "admin"
     cors_origins: str = "http://localhost:5173,http://localhost:8080"
     exchange_rate_api_url: str = "https://apig.his.huawei.com/api/idata/fin/v2/projects/com.huawei.caplatform/getBatchRatemsRateList"
     exchange_rate_tenant_id: str = ""
@@ -37,6 +57,10 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [item.strip() for item in self.cors_origins.split(",") if item.strip()]
+
+    @property
+    def trusted_host_list(self) -> list[str]:
+        return [item.strip() for item in self.trusted_hosts.split(",") if item.strip()]
 
 
 settings = Settings()

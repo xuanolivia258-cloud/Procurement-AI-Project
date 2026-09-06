@@ -1,10 +1,43 @@
-import { describe, expect, it } from 'vitest';
-import { queryString } from './api';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { api, appUrl, AUTH_REQUIRED_EVENT, queryString } from './api';
 import { sortCegByPriority, toPayload } from './App';
+
+afterEach(() => { vi.unstubAllGlobals(); });
+
+describe('authentication errors', () => {
+  it('rechecks auth status on an expired session instead of navigating to W3', async () => {
+    const dispatchEvent = vi.fn();
+    const assign = vi.fn();
+    vi.stubGlobal('window', { dispatchEvent, location: { assign } });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      error: { code: 'AUTHENTICATION_REQUIRED', message: 'Session expired.' },
+    }), { status: 401 })));
+    await expect(api('/api/projects')).rejects.toMatchObject({ status: 401, code: 'AUTHENTICATION_REQUIRED' });
+    expect(dispatchEvent).toHaveBeenCalledOnce();
+    expect(dispatchEvent.mock.calls[0][0].type).toBe(AUTH_REQUIRED_EVENT);
+    expect(assign).not.toHaveBeenCalled();
+  });
+
+  it('does not trigger an auth recheck loop from the status endpoint', async () => {
+    const dispatchEvent = vi.fn();
+    vi.stubGlobal('window', { dispatchEvent });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      error: { code: 'AUTHENTICATION_REQUIRED' },
+    }), { status: 401 })));
+    await expect(api('/api/auth/status')).rejects.toMatchObject({ status: 401 });
+    expect(dispatchEvent).not.toHaveBeenCalled();
+  });
+});
 
 describe('queryString', () => {
   it('omits blank values and keeps active filters', () => {
     expect(queryString({ page: 2, priority: 'High', ceg: '', overdue: undefined })).toBe('page=2&priority=High');
+  });
+});
+
+describe('appUrl', () => {
+  it('places API routes under the shared-domain application prefix', () => {
+    expect(appUrl('/api/health')).toBe('/ai_procurement/api/health');
   });
 });
 

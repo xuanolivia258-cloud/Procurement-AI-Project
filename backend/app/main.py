@@ -14,6 +14,8 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
+from starlette.middleware.sessions import SessionMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from openpyxl import Workbook
 from openpyxl.chart import BarChart, LineChart, Reference
 from openpyxl.chart.axis import ChartLines
@@ -39,6 +41,7 @@ from .schemas import (
     ProjectRead, ProjectUpdate, ReferenceOptionCreate, ReferenceOptionRead,
     ReferenceOptionUpdate,
 )
+from .sso import router as sso_router
 
 
 EXCHANGE_RATE_BUSINESS_TIMEZONE = timezone(timedelta(hours=8), "Asia/Shanghai")
@@ -61,6 +64,21 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.session_secret.get_secret_value(),
+    session_cookie=settings.session_cookie_name,
+    path=settings.session_cookie_path,
+    max_age=settings.session_max_age_seconds,
+    same_site="lax",
+    https_only=settings.session_cookie_secure,
+)
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.trusted_host_list)
+app.include_router(sso_router)
+# Public-path aliases make direct backend/integration tests behave like the
+# browser. The production container Nginx normally strips this prefix before
+# proxying to the unprefixed routes above.
+app.include_router(sso_router, prefix="/ai_procurement", include_in_schema=False)
 
 
 @app.middleware("http")

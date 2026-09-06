@@ -2,8 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, NavLink, Route, Routes, useLocation, useSearchParams } from 'react-router-dom';
-import { api, ApiError, queryString } from './api';
-import type { AuditLog, BudgetAnalysisData, CegAnalysisData, CegAnalysisItem, DashboardData, PaginatedProjects, Project, ProjectInput, ReferenceOption } from './types';
+import { api, ApiError, appUrl, queryString } from './api';
+import AuthGate from './AuthGate';
+import type { Actor, AuditLog, AuthStatus, BudgetAnalysisData, CegAnalysisData, CegAnalysisItem, DashboardData, PaginatedProjects, Project, ProjectInput, ReferenceOption } from './types';
 
 const emptyProject: ProjectInput = {
   project_priority: '', ceg: '', requestor: '', bu: '', request_date: '', budget: '', currency: '', exchange_rate: '', usd_amount: '', exchange_rate_at: '', description: '',
@@ -76,7 +77,12 @@ export function toPayload(values: ProjectInput) {
   return Object.fromEntries(Object.entries(values).map(([key, value]) => [key, value === '' ? null : value]));
 }
 
-function Layout({ language, setLanguage }: { language: Language; setLanguage: (value: Language) => void }) {
+function actorInitials(actor: Actor) {
+  const parts = actor.name.trim().split(/\s+/).filter(Boolean);
+  return (parts.length > 1 ? `${parts[0][0]}${parts[parts.length - 1][0]}` : actor.name.slice(0, 2)).toUpperCase();
+}
+
+function Layout({ language, setLanguage, actor, authMode }: { language: Language; setLanguage: (value: Language) => void; actor: Actor; authMode: AuthStatus['mode'] }) {
   const t = copy[language];
   return <div className="app-shell">
     <aside className="sidebar">
@@ -87,10 +93,10 @@ function Layout({ language, setLanguage }: { language: Language; setLanguage: (v
         <NavLink to="/analysis" title={t.analysis}><NavIcon name="analysis"/><span>{t.analysis}</span></NavLink>
         <NavLink to="/recycle-bin" title={t.recycleBin}><NavIcon name="recycle"/><span>{t.recycleBin}</span></NavLink>
       </nav>
-      <div className="local-user"><span>LT</span><div>{tr(language, 'Local Test User')}<small>{tr(language, 'Administrator')}</small></div></div>
+      <div className="local-user"><span>{actorInitials(actor)}</span><div>{actor.name}<small>{actor.role}</small></div></div>
     </aside>
     <main className="main-content">
-      <header className="topbar"><span className="environment">{tr(language, 'LOCAL TEST ENVIRONMENT')}</span><button className="language" onClick={() => setLanguage(language === 'en' ? 'zh' : 'en')}>{language === 'en' ? '中文' : 'English'}</button></header>
+      <header className="topbar"><span className="environment">{authMode === 'w3' ? 'HUAWEI W3' : tr(language, 'LOCAL TEST ENVIRONMENT')}</span><div className="topbar-actions"><button className="language" onClick={() => setLanguage(language === 'en' ? 'zh' : 'en')}>{language === 'en' ? '中文' : 'English'}</button>{authMode === 'w3' && <button className="logout-button" onClick={() => window.location.assign(appUrl('/api/auth/logout'))}>{language === 'zh' ? '退出' : 'Sign out'}</button>}</div></header>
       <Routes>
         <Route path="/" element={<Dashboard language={language} />} />
         <Route path="/projects" element={<Projects language={language} />} />
@@ -199,8 +205,8 @@ function MonthlyReportDialog({ cegOptions, initialCeg, close, language }: { cegO
   const [ceg, setCeg] = useState(initialCeg);
   const [previewUrl, setPreviewUrl] = useState('');
   const reportQuery = queryString({ month, ceg, language });
-  const preview = () => { if (month) setPreviewUrl(`/api/monthly-report.html?${reportQuery}`); };
-  const downloadUrl = `/api/monthly-report.html?${queryString({ month, ceg, language, download: true })}`;
+  const preview = () => { if (month) setPreviewUrl(appUrl(`/api/monthly-report.html?${reportQuery}`)); };
+  const downloadUrl = appUrl(`/api/monthly-report.html?${queryString({ month, ceg, language, download: true })}`);
   return <div className="modal-backdrop"><div className="modal report-modal" role="dialog" aria-modal="true" aria-labelledby="monthly-report-title"><header><div><p className="eyebrow">{tr(language, 'MONTHLY REPORT')}</p><h2 id="monthly-report-title">{tr(language, 'Project Tracking Monthly Report')}</h2></div><button aria-label={tr(language, 'Close')} onClick={close}>×</button></header><div className="report-dialog-body"><div className="report-settings"><label>{tr(language, 'Report Month')}<input type="month" required value={month} onChange={(event) => { setMonth(event.target.value); setPreviewUrl(''); }} /></label><label>CEG<select value={ceg} onChange={(event) => { setCeg(event.target.value); setPreviewUrl(''); }}><option value="">{copy[language].all}</option>{cegOptions.map((name) => <option key={name}>{name}</option>)}</select></label><button className="button secondary" type="button" disabled={!month} onClick={preview}>{tr(language, 'Preview Report')}</button><a className={`button primary${!month ? ' disabled' : ''}`} href={month ? downloadUrl : undefined}>{tr(language, 'Download HTML')}</a></div><p className="report-scope-note">{tr(language, 'Projects are included when their PR Approved Date falls within the selected month. Deleted projects are excluded.')}</p>{previewUrl ? <iframe className="report-preview" title={`${tr(language, 'Project Tracking Monthly Report')} ${tr(language, 'Preview Report')}`} src={previewUrl}/> : <div className="report-preview-empty"><strong>{tr(language, 'Preview your report')}</strong><span>{tr(language, 'Select the reporting scope, then click Preview Report.')}</span></div>}</div></div></div>;
 }
 
@@ -310,7 +316,7 @@ function Projects({ language }: { language: Language }) {
     onCopy: setCopying,
     onTransition: (project: Project, action: string) => { if (confirm(language === 'zh' ? `确定要${action === 'complete' ? '完成' : '重新打开'}此项目吗？` : `Confirm ${action}?`)) transition.mutate({ project, action }); },
   };
-  const exportUrl = `/api/projects-export.xlsx?${queryString({ ...filters, language })}`;
+  const exportUrl = appUrl(`/api/projects-export.xlsx?${queryString({ ...filters, language })}`);
   return <section className="page projects-page">
     <div className="page-heading"><div><p className="eyebrow">{tr(language, 'PROJECT PORTFOLIO')}</p><h1>{t.projects}</h1></div><div className="heading-actions"><a className="button secondary" href={exportUrl}>{t.export}</a></div></div>
     <div className="filters panel"><div className="filter-main">
@@ -542,5 +548,5 @@ function ErrorBox({ error, language = 'en' }: { error: unknown; language?: Langu
 export default function App() {
   const [language, setLanguage] = useState<Language>(() => (localStorage.getItem('cari-language') as Language) || 'en');
   const changeLanguage = (value: Language) => { setLanguage(value); localStorage.setItem('cari-language', value); document.documentElement.lang = value === 'zh' ? 'zh-CN' : 'en'; };
-  return <Layout language={language} setLanguage={changeLanguage} />;
+  return <AuthGate language={language}>{(actor, mode) => <Layout language={language} setLanguage={changeLanguage} actor={actor} authMode={mode} />}</AuthGate>;
 }

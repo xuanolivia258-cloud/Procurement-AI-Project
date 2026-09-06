@@ -4,7 +4,33 @@ Team-ready procurement tracking system built with React, FastAPI, and SQLite.
 
 ## Current mode
 
-Authentication is intentionally disabled for local evaluation. Every request runs as `local-test-user` with administrator privileges. The backend exposes an authentication dependency so a future external identity API can replace the local actor without changing procurement services.
+Authentication defaults to `AUTH_MODE=disabled` for evaluation. The login button
+is hidden and every request runs as `local-test-user` with administrator privileges.
+
+Set `AUTH_MODE=w3` in the repository-root `.env` to display the Huawei W3 login
+button and require a signed-in session. CARI uses the
+server-side callback `https://cari.rnd.huawei.com/ai_procurement/authorize`, stores only the
+local actor identity in a signed, secure session cookie, and discards W3 access
+and refresh tokens after obtaining the user profile. See [DEPLOYMENT.md](DEPLOYMENT.md)
+for W3 registration, environment, Nginx, deployment, verification, and rollback.
+
+For a single test environment, deploy this version with `AUTH_MODE=disabled`
+first (`docker compose up -d --build`). Once W3 is configured, switch to `w3`.
+If login fails, switch back to `disabled` to continue testing procurement features.
+After either environment change, run:
+
+```bash
+docker compose up -d --force-recreate backend frontend
+```
+
+No frontend rebuild or database reset is needed for subsequent switch changes.
+Recreating the frontend container also refreshes Nginx's backend address after
+Docker replaces the backend container; the existing built images are reused.
+`docker compose restart` alone does not apply changed environment variables.
+The login/error screen checks the server every five seconds while visible and
+also offers **Check sign-in status**. If you are on the external W3 page, return
+to CARI or reopen it after disabling login. This switch does not disable the
+separate IAM token used by the exchange-rate integration.
 
 The old root-level `index.html`, `script.js`, `styles.css`, `server.js`, and `package.json` are retained only as prototype reference. The supported application lives in `frontend/` and `backend/`.
 
@@ -16,7 +42,7 @@ Install Docker Desktop, then run from this directory:
 docker compose up --build
 ```
 
-Open <http://localhost:8080>. API documentation is available at <http://localhost:8000/docs>.
+Open <http://localhost:8080/ai_procurement/>. API documentation is available at <http://localhost:8000/docs>.
 
 The SQLite file is stored in the Docker volume `test_procurement_data` (the exact prefix follows the Compose project name). Rebuilding containers does not remove it.
 
