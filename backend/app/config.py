@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Literal
 
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     w3_request_timeout_seconds: float = 10.0
     w3_verify_ssl: bool = True
     w3_default_role: Literal["admin", "editor", "viewer"] = "admin"
+    w3_directory_enabled: bool = True
+    w3_directory_url: str = "https://wework-digitalspace-g.rnd.huawei.com/gw/etipublicconfig/etipublicconfig/v1/w3"
+    w3_directory_timeout_seconds: float = Field(default=3.0, gt=0, le=10)
     cors_origins: str = "http://localhost:5173,http://localhost:8080"
     exchange_rate_api_url: str = "https://apig.his.huawei.com/api/idata/fin/v2/projects/com.huawei.caplatform/getBatchRatemsRateList"
     exchange_rate_tenant_id: str = ""

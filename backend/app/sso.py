@@ -5,10 +5,12 @@ import time
 from urllib.parse import urlencode, urlparse
 
 import httpx
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 
 from .config import settings
+from .auth import get_actor
+from .directory import owner_profile
 from .logging_config import log_integration_event, log_request_error, summarize_http_response
 from .profile import avatar_from_profile
 from .schemas import Actor
@@ -240,6 +242,15 @@ def auth_status(request: Request, response: Response):
         }
     request.state.actor_id = actor.id
     return {"authenticated": True, "mode": "w3", "actor": actor.model_dump(exclude_none=True)}
+
+
+@router.get("/api/auth/profile")
+def auth_profile(response: Response, actor: Actor = Depends(get_actor)):
+    response.headers["Cache-Control"] = "no-store"
+    # Query only the authenticated account. No user-supplied search/id parameter is accepted.
+    if settings.auth_mode == "w3":
+        return owner_profile(actor)
+    return actor.model_dump(exclude_none=True)
 
 
 @router.get("/api/auth/login")

@@ -117,6 +117,47 @@ If you are on the external Uniportal page, reopen CARI after changing the switch
 Missing W3 configuration displays a retry page; it never automatically grants
 unauthenticated access. This switch is independent of exchange-rate IAM settings.
 
+### Optional Owner profile enrichment
+
+After W3 login, the header asynchronously enriches the current user's English
+name and photo using the same sources as CARI DSTE MRVP's Owner selector:
+
+- Personnel lookup: `https://wework-digitalspace-g.rnd.huawei.com/gw/etipublicconfig/etipublicconfig/v1/w3`,
+  GET with `userInfo=<current W3 account>` and `x-user-name: <current W3 account>`.
+- Photo: `https://w3.huawei.com/w3lab/rest/yellowpage/face/<numeric employee ID>/45`.
+  As in DSTE's `getUserID`, remove the account's letter prefix and preserve leading zeros.
+
+The authenticated `/api/auth/profile` endpoint supplies only the current actor
+and allowlisted lookup metadata. The browser performs the directory call with
+`credentials: include`, matching MRVP's `withCredentials: true`. It uses the
+directory's own browser SSO cookies; procurement cookies and W3 access tokens
+are not copied or forwarded. Direct server requests without that browser
+session return 403. The directory's CORS policy must allow the procurement
+origin, credentials, GET and the `x-user-name` header. The current production
+origin's preflight was verified; actual lookup still requires the user's
+directory SSO session and permissions.
+
+Only an exact, unambiguous `w3Name` match is used. English display text comes
+from `fullName`, removing the current account suffix. Audit names, identity,
+roles and signed session cookies are not changed. Existing sessions are
+enriched on refresh; re-login is not required just to enable this feature.
+Lookup failure or timeout keeps the W3 name, and failed photos show initials.
+An optional directory 401/403 does not log the user out or start another SSO loop.
+
+Optional root `.env` settings (defaults work without editing existing `.env`):
+
+```dotenv
+W3_DIRECTORY_ENABLED=true
+W3_DIRECTORY_TIMEOUT_SECONDS=3
+# W3_DIRECTORY_URL defaults to the production URL above; only the DSTE production/test URLs are allowed.
+```
+
+Set `W3_DIRECTORY_ENABLED=false` and recreate the backend/frontend containers
+to disable enrichment. No new secret or database migration is needed. The
+lookup runs only for authenticated W3 users, never for the local test actor;
+the workspace does not wait for it. Profile data is cached in page memory for
+10 minutes per account, not in localStorage. No shared Nginx/news changes are needed.
+
 ## 3. Start or upgrade the application
 
 Back up the SQLite data before an upgrade, then run:

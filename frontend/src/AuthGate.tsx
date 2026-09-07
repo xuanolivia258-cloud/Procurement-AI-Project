@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation } from 'react-router-dom';
 import { api, appUrl, AUTH_REQUIRED_EVENT } from './api';
 import type { Actor, AuthStatus } from './types';
+import { fetchOwnerProfile } from './ownerProfile';
 
 export function signInUrl(status: AuthStatus | undefined, location: { pathname: string; search: string; hash: string }) {
   const params = new URLSearchParams(location.search);
@@ -19,6 +20,11 @@ export function shouldAutoSignIn(status: AuthStatus | undefined, search: string)
   const params = new URLSearchParams(search);
   return status?.mode === 'w3' && !status.authenticated && status.login_ready !== false
     && !params.has('auth_error') && params.get('signed_out') !== '1';
+}
+
+export function profileForActor(actor: Actor, profile: Actor | undefined): Actor {
+  if (!profile || profile.id !== actor.id) return actor;
+  return { ...actor, name_en: profile.name_en || actor.name_en, avatar_url: profile.avatar_url || actor.avatar_url };
 }
 
 export default function AuthGate({ language, children }: {
@@ -40,6 +46,15 @@ export default function AuthGate({ language, children }: {
     // Recheck while the sign-in/error screen is visible. Turning login off
     // on the server releases this screen without a frontend rebuild.
     refetchInterval: (query) => query.state.data?.authenticated ? false : 5000,
+  });
+  const profileEnabled = data?.mode === 'w3' && data.authenticated && !!data.actor;
+  const { data: profile } = useQuery({
+    queryKey: ['auth-profile', data?.mode, data?.actor?.id],
+    queryFn: ({ signal }) => fetchOwnerProfile(data!.actor!, signal),
+    enabled: profileEnabled,
+    staleTime: 10 * 60 * 1000,
+    retry: false,
+    refetchOnWindowFocus: false,
   });
 
   useEffect(() => {
@@ -68,7 +83,8 @@ export default function AuthGate({ language, children }: {
     }
   }, [autoSignIn, loginUrl, dataUpdatedAt]);
 
-  if (data?.authenticated && data.actor) return <>{children(data.actor, data.mode)}</>;
+  // Owner lookup is presentation-only and must never delay access to the workspace.
+  if (data?.authenticated && data.actor) return <>{children(profileEnabled ? profileForActor(data.actor, profile) : data.actor, data.mode)}</>;
 
   const recheckButton = <button type="button" className="auth-recheck" disabled={isFetching}
     onClick={() => { void refetch(); }}>

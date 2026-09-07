@@ -26,6 +26,9 @@ services:
       W3_REQUEST_TIMEOUT_SECONDS: ${W3_REQUEST_TIMEOUT_SECONDS:-10}
       W3_VERIFY_SSL: ${W3_VERIFY_SSL:-true}
       W3_DEFAULT_ROLE: ${W3_DEFAULT_ROLE:-admin}
+      W3_DIRECTORY_ENABLED: ${W3_DIRECTORY_ENABLED:-true}
+      W3_DIRECTORY_URL: ${W3_DIRECTORY_URL:-https://wework-digitalspace-g.rnd.huawei.com/gw/etipublicconfig/etipublicconfig/v1/w3}
+      W3_DIRECTORY_TIMEOUT_SECONDS: ${W3_DIRECTORY_TIMEOUT_SECONDS:-3}
       EXCHANGE_RATE_API_URL: ${EXCHANGE_RATE_API_URL:-https://apig.his.huawei.com/api/idata/fin/v2/projects/com.huawei.caplatform/getBatchRatemsRateList}
       EXCHANGE_RATE_TENANT_ID: ${EXCHANGE_RATE_TENANT_ID:-}
       EXCHANGE_RATE_RATE_TYPE: ${EXCHANGE_RATE_RATE_TYPE:-SPOT-SAFE}

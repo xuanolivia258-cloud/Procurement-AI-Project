@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
-import AuthGate, { shouldAutoSignIn, signInUrl } from './AuthGate';
+import AuthGate, { profileForActor, shouldAutoSignIn, signInUrl } from './AuthGate';
+import UserMenu from './UserMenu';
 import type { AuthStatus } from './types';
 
 const clients: QueryClient[] = [];
@@ -19,7 +20,7 @@ afterEach(() => { clients.splice(0).forEach((client) => client.clear()); });
 function renderGate(client: QueryClient, path = '/') {
   return renderToStaticMarkup(<QueryClientProvider client={client}>
     <MemoryRouter initialEntries={[path]}>
-      <AuthGate language="zh">{(actor, mode) => <div>Project workspace: {actor.id} / {mode}</div>}</AuthGate>
+      <AuthGate language="zh">{(actor, mode) => <div>Project workspace: {actor.id} / {mode}<UserMenu actor={actor} authMode={mode} language="en" /></div>}</AuthGate>
     </MemoryRouter>
   </QueryClientProvider>);
 }
@@ -99,6 +100,35 @@ describe('environment-controlled sign-in gate', () => {
     expect(html).toContain('暂时无法连接服务');
     expect(html).toContain('重新检查登录状态');
     expect(html).not.toContain('Project workspace');
+  });
+
+  it('enriches the current header without changing the authenticated identity or audit name', () => {
+    const actor = { id: 'l00123456', name: '王小明', role: 'viewer' as const };
+    const profile = { ...actor, name: 'Other audit name', role: 'admin' as const, name_en: 'Alex Wang',
+      avatar_url: 'https://w3.huawei.com/w3lab/rest/yellowpage/face/00123456/45' };
+    expect(profileForActor(actor, profile)).toEqual({ ...actor, name_en: profile.name_en, avatar_url: profile.avatar_url });
+    expect(profileForActor(actor, { ...profile, id: 'other.user' })).toBe(actor);
+    const client = newClient();
+    client.setQueryData<AuthStatus>(['auth-status'], { authenticated: true, mode: 'w3', actor });
+    client.setQueryData(['auth-profile', 'w3', actor.id], profile);
+    expect(renderGate(client)).toContain('user-menu-name">Alex Wang');
+    expect(renderGate(client)).toContain('/face/00123456/45');
+    client.setQueryData(['auth-profile', 'w3', actor.id], { ...profile, id: 'other.user' });
+    expect(renderGate(client)).not.toContain('Alex Wang');
+    client.setQueryData<AuthStatus>(['auth-status'], { authenticated: true, mode: 'disabled', actor });
+    expect(renderGate(client)).not.toContain('Alex Wang');
+  });
+
+  it('opens the authenticated workspace while optional profile data is missing or failed', async () => {
+    const client = newClient();
+    client.setQueryData<AuthStatus>(['auth-status'], { authenticated: true, mode: 'w3',
+      actor: { id: 'l00123456', name: 'W3 Fallback', role: 'viewer' } });
+    expect(renderGate(client)).toContain('Project workspace');
+    await client.fetchQuery({ queryKey: ['auth-profile', 'w3', 'l00123456'], queryFn: () => { throw new Error('Directory offline'); } }).catch(() => {});
+    const html = renderGate(client);
+    expect(html).toContain('Project workspace');
+    expect(html).toContain('user-menu-name">W3 Fallback');
+    expect(html).not.toContain('暂时无法连接服务');
   });
 
   it('does not silently sign back in after explicit logout', () => {
