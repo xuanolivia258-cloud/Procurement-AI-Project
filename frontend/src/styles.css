@@ -19,8 +19,16 @@ button,a { -webkit-tap-highlight-color: transparent; }
 .environment { padding:6px 10px; border-radius:20px; color:#716616; background:#fff6c9; font-size:10px; font-weight:800; letter-spacing:.08em; }
 .language { border:1px solid var(--line); border-radius:8px; padding:7px 12px; color:#4d5267; background:#fff; cursor:pointer; }
 .topbar-actions { display:flex; align-items:center; gap:9px; }
-.logout-button { border:0; border-radius:980px; padding:8px 13px; color:#fff; background:#302b68; cursor:pointer; font-size:11px; font-weight:750; }
-.logout-button:hover { background:#211f48; }
+.user-menu { display:flex; align-items:center; gap:14px; min-width:0; }
+.user-identity { display:flex; align-items:center; gap:8px; min-width:0; min-height:38px; color:#303034; }
+.user-signout { display:flex; align-items:center; gap:6px; flex-shrink:0; min-height:34px; padding:6px 10px; border:1px solid #e5e5e7; border-radius:8px; background:#fff; color:#515154; text-decoration:none; white-space:nowrap; font-size:11px; font-weight:600; }
+.user-signout:hover { color:#1d1d1f; background:#f5f5f7; }
+.user-signout:focus-visible { outline:2px solid #636366; outline-offset:3px; }
+.user-avatar { position:relative; display:grid; place-items:center; flex:0 0 30px; width:30px; height:30px; overflow:hidden; border-radius:50%; background:#3a3a3c; color:#fff; font-size:11px; font-weight:750; letter-spacing:.02em; }
+.user-avatar img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+.user-menu-name { min-width:0; max-width:166px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; font-weight:650; }
+@media(max-width:650px){.topbar{gap:8px}.topbar-actions{gap:8px;min-width:0}.topbar .environment{min-width:0;max-width:72px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:8px}.topbar .language{padding:7px 8px;font-size:11px}.user-menu{gap:8px}.user-identity{gap:6px}.user-menu-name{max-width:100px}.user-signout{padding:6px 8px}.user-signout svg{display:none}}
+@media(max-width:380px){.topbar .environment{display:none}.topbar .topbar-actions{width:100%;justify-content:space-between}.user-menu-name{max-width:104px}.user-avatar{width:28px;height:28px;flex-basis:28px}}
 .auth-stage { min-height:100vh; display:grid; place-items:center; padding:24px; background:radial-gradient(circle at 15% 10%,rgba(102,87,220,.16),transparent 28%),radial-gradient(circle at 88% 82%,rgba(59,130,196,.13),transparent 30%),#f5f5f7; }
 .auth-card { width:min(430px,100%); padding:42px; border-radius:28px; background:rgba(255,255,255,.94); box-shadow:0 28px 80px rgba(33,31,72,.15); text-align:center; }
 .auth-brand { display:flex; align-items:center; justify-content:center; gap:12px; margin-bottom:28px; text-align:left; }
@@ -32,6 +40,10 @@ button,a { -webkit-tap-highlight-color: transparent; }
 .auth-card>p { margin:0 0 27px; color:#6e6e73; line-height:1.55; }
 .auth-button { display:flex; align-items:center; justify-content:center; gap:10px; width:100%; min-height:49px; border:0; border-radius:14px; color:#fff; background:linear-gradient(135deg,#e64545,#ed702f 55%,#e8a31f); box-shadow:0 12px 28px rgba(220,75,48,.22); cursor:pointer; text-decoration:none; font-weight:750; }
 .auth-button:hover { transform:translateY(-1px); box-shadow:0 16px 34px rgba(220,75,48,.28); }
+.auth-button:disabled { opacity:.55; cursor:not-allowed; transform:none; box-shadow:none; }
+.auth-config-error { margin:0 0 20px; padding:14px; border:1px solid #edb8aa; border-radius:12px; color:#883d29; background:#fff4ef; text-align:left; font-size:13px; line-height:1.5; }
+.auth-config-error p { margin:6px 0; }
+.auth-config-error code { display:block; overflow-wrap:anywhere; font-size:11px; }
 .auth-button span { display:grid; place-items:center; width:26px; height:26px; border-radius:8px; background:rgba(255,255,255,.2); }
 .auth-security { display:block; margin-top:19px; color:#98989d; font-size:10px; line-height:1.5; }
 .auth-recheck { margin-top:18px; min-height:40px; padding:8px 14px; border:1px solid #d2d2d7; border-radius:10px; color:#515154; background:#fff; cursor:pointer; }

@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     local_actor_id: str = "local-test-user"
     local_actor_name: str = "Local Test User"
     site_url: str = "http://localhost:8080/ai_procurement"
-    trusted_hosts: str = "localhost,127.0.0.1,testserver,cari.rnd.huawei.com"
+    trusted_hosts: str = "localhost,127.0.0.1,testserver,ai4news.rnd.huawei.com,cari.rnd.huawei.com"
     session_secret: SecretStr = SecretStr("dev-only-change-me")
     session_cookie_name: str = "cari_session"
     session_cookie_path: str = "/ai_procurement"
@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     w3_userinfo_url: str = "https://uniportal.huawei.com/saaslogin1/oauth2/userinfo"
     w3_logout_url: str = "https://uniportal.huawei.com/saaslogin1/oauth2/logout"
     w3_scope: str = "base.profile"
-    w3_redirect_uri: str = "https://cari.rnd.huawei.com/ai_procurement/authorize"
+    w3_redirect_uri: str = "https://ai4news.rnd.huawei.com/ai_procurement/authorize"
     w3_request_timeout_seconds: float = 10.0
     w3_verify_ssl: bool = True
     w3_default_role: Literal["admin", "editor", "viewer"] = "admin"

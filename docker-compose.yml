@@ -8,7 +8,7 @@ services:
       LOCAL_ACTOR_ID: local-test-user
       LOCAL_ACTOR_NAME: Local Test User
       SITE_URL: ${SITE_URL:-http://localhost:8080/ai_procurement}
-      TRUSTED_HOSTS: ${TRUSTED_HOSTS:-localhost,127.0.0.1,testserver,cari.rnd.huawei.com}
+      TRUSTED_HOSTS: ${TRUSTED_HOSTS:-localhost,127.0.0.1,testserver,ai4news.rnd.huawei.com,cari.rnd.huawei.com}
       SESSION_SECRET: ${SESSION_SECRET:-dev-only-change-me}
       SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-cari_session}
       SESSION_COOKIE_PATH: ${SESSION_COOKIE_PATH:-/ai_procurement}
@@ -22,7 +22,7 @@ services:
       W3_USERINFO_URL: ${W3_USERINFO_URL:-https://uniportal.huawei.com/saaslogin1/oauth2/userinfo}
       W3_LOGOUT_URL: ${W3_LOGOUT_URL:-https://uniportal.huawei.com/saaslogin1/oauth2/logout}
       W3_SCOPE: ${W3_SCOPE:-base.profile}
-      W3_REDIRECT_URI: ${W3_REDIRECT_URI:-https://cari.rnd.huawei.com/ai_procurement/authorize}
+      W3_REDIRECT_URI: ${W3_REDIRECT_URI:-https://ai4news.rnd.huawei.com/ai_procurement/authorize}
       W3_REQUEST_TIMEOUT_SECONDS: ${W3_REQUEST_TIMEOUT_SECONDS:-10}
       W3_VERIFY_SSL: ${W3_VERIFY_SSL:-true}
       W3_DEFAULT_ROLE: ${W3_DEFAULT_ROLE:-admin}
@@ -62,7 +62,7 @@ services:
       backend:
         condition: service_healthy
     ports:
-      - "127.0.0.1:${FRONTEND_PORT:-8080}:80"
+      - "${FRONTEND_BIND_HOST:-127.0.0.1}:${FRONTEND_PORT:-8080}:80"
 
 volumes:
   procurement_data:

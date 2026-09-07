@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, NavLink, Route, Routes, useLocation, useSearchParams } from 'react-router-dom';
 import { api, ApiError, appUrl, queryString } from './api';
 import AuthGate from './AuthGate';
+import UserMenu from './UserMenu';
 import type { Actor, AuditLog, AuthStatus, BudgetAnalysisData, CegAnalysisData, CegAnalysisItem, DashboardData, PaginatedProjects, Project, ProjectInput, ReferenceOption } from './types';
 
 const emptyProject: ProjectInput = {
@@ -77,11 +78,6 @@ export function toPayload(values: ProjectInput) {
   return Object.fromEntries(Object.entries(values).map(([key, value]) => [key, value === '' ? null : value]));
 }
 
-function actorInitials(actor: Actor) {
-  const parts = actor.name.trim().split(/\s+/).filter(Boolean);
-  return (parts.length > 1 ? `${parts[0][0]}${parts[parts.length - 1][0]}` : actor.name.slice(0, 2)).toUpperCase();
-}
-
 function Layout({ language, setLanguage, actor, authMode }: { language: Language; setLanguage: (value: Language) => void; actor: Actor; authMode: AuthStatus['mode'] }) {
   const t = copy[language];
   return <div className="app-shell">
@@ -93,10 +89,9 @@ function Layout({ language, setLanguage, actor, authMode }: { language: Language
         <NavLink to="/analysis" title={t.analysis}><NavIcon name="analysis"/><span>{t.analysis}</span></NavLink>
         <NavLink to="/recycle-bin" title={t.recycleBin}><NavIcon name="recycle"/><span>{t.recycleBin}</span></NavLink>
       </nav>
-      <div className="local-user"><span>{actorInitials(actor)}</span><div>{actor.name}<small>{actor.role}</small></div></div>
     </aside>
     <main className="main-content">
-      <header className="topbar"><span className="environment">{authMode === 'w3' ? 'HUAWEI W3' : tr(language, 'LOCAL TEST ENVIRONMENT')}</span><div className="topbar-actions"><button className="language" onClick={() => setLanguage(language === 'en' ? 'zh' : 'en')}>{language === 'en' ? '中文' : 'English'}</button>{authMode === 'w3' && <button className="logout-button" onClick={() => window.location.assign(appUrl('/api/auth/logout'))}>{language === 'zh' ? '退出' : 'Sign out'}</button>}</div></header>
+      <header className="topbar"><span className="environment">{authMode === 'w3' ? 'HUAWEI W3' : tr(language, 'LOCAL TEST ENVIRONMENT')}</span><div className="topbar-actions"><button className="language" onClick={() => setLanguage(language === 'en' ? 'zh' : 'en')}>{language === 'en' ? '中文' : 'English'}</button><UserMenu key={`${authMode}:${actor.id}`} actor={actor} authMode={authMode} language={language} /></div></header>
       <Routes>
         <Route path="/" element={<Dashboard language={language} />} />
         <Route path="/projects" element={<Projects language={language} />} />

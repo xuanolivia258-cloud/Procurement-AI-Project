@@ -4,6 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from .profile import safe_avatar_url
+
 
 Priority = Literal["Normal", "Medium", "High"]
 EcForm = Literal["Y", "N", "N/A"]
@@ -14,7 +16,15 @@ Currency = Literal["CAD", "USD", "CNY", "EUR"]
 class Actor(BaseModel):
     id: str
     name: str
+    name_en: str | None = None
     role: Literal["admin", "editor", "viewer"] = "admin"
+    avatar_url: str | None = None
+
+    @field_validator("avatar_url", mode="before")
+    @classmethod
+    def validate_avatar_url(cls, value):
+        # A missing or invalid photo must never invalidate an otherwise valid login.
+        return safe_avatar_url(value)
 
 
 class ProjectFields(BaseModel):

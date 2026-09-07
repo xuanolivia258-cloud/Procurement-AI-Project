@@ -10,6 +10,7 @@ from fastapi.responses import RedirectResponse
 
 from .config import settings
 from .logging_config import log_integration_event, log_request_error, summarize_http_response
+from .profile import avatar_from_profile
 from .schemas import Actor
 
 
@@ -38,7 +39,7 @@ def _site_url(path: str = "/") -> str:
     return f"{settings.site_url.rstrip('/')}{path}"
 
 
-def _require_w3_configuration() -> None:
+def _w3_configuration_issues() -> list[str]:
     values = {
         "W3_CLIENT_ID": settings.w3_client_id,
         "W3_CLIENT_SECRET": settings.w3_client_secret.get_secret_value(),
@@ -48,9 +49,25 @@ def _require_w3_configuration() -> None:
         "W3_REDIRECT_URI": settings.w3_redirect_uri,
         "SESSION_SECRET": settings.session_secret.get_secret_value(),
     }
-    missing = [name for name, value in values.items() if not value.strip()]
+    missing = [
+        name for name, value in values.items()
+        if not value.strip() or value.strip().startswith("replace-with-")
+    ]
     if settings.session_secret.get_secret_value() == "dev-only-change-me":
-        missing.append("SESSION_SECRET (must not use the development default)")
+        missing.append("SESSION_SECRET")
+    site = urlparse(settings.site_url)
+    callback = urlparse(settings.w3_redirect_uri)
+    if site.scheme not in {"http", "https"} or not site.netloc:
+        missing.append("SITE_URL")
+    if callback.scheme not in {"http", "https"} or not callback.netloc:
+        missing.append("W3_REDIRECT_URI")
+    elif (site.scheme.lower(), site.netloc.lower()) != (callback.scheme.lower(), callback.netloc.lower()):
+        missing.append("SITE_URL / W3_REDIRECT_URI (origin mismatch)")
+    return list(dict.fromkeys(missing))
+
+
+def _require_w3_configuration() -> None:
+    missing = _w3_configuration_issues()
     if missing:
         raise HTTPException(
             status_code=503,
@@ -179,7 +196,7 @@ async def fetch_w3_profile(request: Request, access_token: str) -> dict:
 
 def actor_from_profile(profile: dict) -> Actor:
     identity = next(
-        (str(profile[key]).strip() for key in ("uid", "uuid", "globalUserID") if profile.get(key)),
+        (str(profile[key]).strip() for key in ("uid", "uuid", "globalUserID") if profile.get(key) and str(profile[key]).strip()),
         "",
     )
     if not identity:
@@ -188,11 +205,15 @@ def actor_from_profile(profile: dict) -> Actor:
         (
             str(profile[key]).strip()
             for key in ("displayName", "displayNameEn", "displayNameCn", "givenName", "email")
-            if profile.get(key)
+            if profile.get(key) and str(profile[key]).strip()
         ),
         identity,
     )
-    return Actor(id=identity.lower(), name=name, role=settings.w3_default_role)
+    # Keep the audit/display name unchanged; the header can prefer W3's English name.
+    english_name = profile.get("displayNameEn")
+    english_name = english_name.strip()[:200] if isinstance(english_name, str) else ""
+    return Actor(id=identity.lower(), name=name, name_en=english_name or None,
+                 role=settings.w3_default_role, avatar_url=avatar_from_profile(profile))
 
 
 @router.get("/api/auth/status")
@@ -203,15 +224,22 @@ def auth_status(request: Request, response: Response):
         request.session.clear()
         actor = Actor(id=settings.local_actor_id, name=settings.local_actor_name, role="admin")
         request.state.actor_id = actor.id
-        return {"authenticated": True, "mode": "disabled", "actor": actor}
+        return {"authenticated": True, "mode": "disabled", "actor": actor.model_dump(exclude_none=True)}
     raw_actor = request.session.get("actor")
     try:
         actor = Actor.model_validate(raw_actor)
     except Exception:
         request.session.pop("actor", None)
-        return {"authenticated": False, "mode": "w3", "actor": None, "login_url": "/api/auth/login"}
+        issues = _w3_configuration_issues()
+        return {
+            "authenticated": False, "mode": "w3", "actor": None,
+            "login_url": _site_url("/api/auth/login"),
+            "login_ready": not issues,
+            # Setting names only: never expose client secrets or session keys.
+            "configuration_issues": issues,
+        }
     request.state.actor_id = actor.id
-    return {"authenticated": True, "mode": "w3", "actor": actor}
+    return {"authenticated": True, "mode": "w3", "actor": actor.model_dump(exclude_none=True)}
 
 
 @router.get("/api/auth/login")
@@ -223,6 +251,14 @@ def w3_login(request: Request, next: str | None = None):
     except HTTPException as exc:
         log_request_error(request, exc.status_code, exc.detail["code"], exc.detail["message"])
         return _callback_error("w3_not_configured")
+    # Start the flow on the callback's host, even if the user opened the server
+    # IP. A host-only session cookie issued on an IP cannot validate a callback
+    # received on the public domain. The target is configured, never user-supplied.
+    if request.headers.get("host", "").lower() != urlparse(settings.site_url).netloc.lower():
+        return RedirectResponse(
+            url=f"{_site_url('/api/auth/login')}?{urlencode({'next': _safe_next(next)})}",
+            status_code=303,
+        )
     state = secrets.token_urlsafe(32)
     _remember_state(request, state, _safe_next(next))
     params = {
@@ -261,7 +297,7 @@ async def w3_callback(request: Request, code: str | None = None, state: str | No
     # Keep only the local identity in the signed session cookie. W3 access and
     # refresh tokens are deliberately discarded after userinfo is obtained.
     request.session.clear()
-    request.session["actor"] = actor.model_dump()
+    request.session["actor"] = actor.model_dump(exclude_none=True)
     request.state.actor_id = actor.id
     return RedirectResponse(url=_site_url(next_path), status_code=303)
 
@@ -269,7 +305,8 @@ async def w3_callback(request: Request, code: str | None = None, state: str | No
 @router.get("/api/auth/logout")
 def w3_logout(request: Request):
     request.session.clear()
-    local_redirect = _site_url("/")
+    # An explicit logout must not immediately start a new (possibly silent) SSO login.
+    local_redirect = _site_url("/?signed_out=1" if settings.auth_mode == "w3" else "/")
     if settings.auth_mode != "w3" or not settings.w3_logout_url:
         return RedirectResponse(url=local_redirect, status_code=303)
     params = {"clientId": settings.w3_client_id, "redirect": local_redirect}

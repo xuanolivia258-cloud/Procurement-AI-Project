@@ -7,6 +7,12 @@ import pytest
 from app.config import Settings, settings
 
 
+@pytest.fixture(autouse=True)
+def canonical_request_host(client):
+    # The public Nginx preserves this Host while proxying to the backend.
+    client.headers["Host"] = "cari.rnd.huawei.com"
+
+
 def test_auth_switch_defaults_off_and_reads_runtime_environment(monkeypatch):
     monkeypatch.delenv("AUTH_MODE", raising=False)
     assert Settings(_env_file=None).auth_mode == "disabled"
@@ -42,12 +48,80 @@ def test_w3_mode_requires_session_for_business_api(client, monkeypatch):
     assert status.status_code == 200
     assert status.headers["cache-control"] == "no-store"
     assert status.json()["authenticated"] is False
+    assert status.json()["login_ready"] is True
+    assert status.json()["login_url"] == "https://cari.rnd.huawei.com/ai_procurement/api/auth/login"
 
     response = client.get("/api/projects")
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "AUTHENTICATION_REQUIRED"
     assert client.post("/api/projects", json={}).status_code == 401
     assert client.get("/api/health").status_code == 200
+
+
+def test_auth_status_reports_missing_settings_without_exposing_secrets(client, monkeypatch):
+    configure_w3(monkeypatch)
+    monkeypatch.setattr(settings, "w3_client_id", "")
+    response = client.get("/api/auth/status")
+    assert response.json()["login_ready"] is False
+    assert response.json()["configuration_issues"] == ["W3_CLIENT_ID"]
+    assert "test-secret" not in response.text
+    assert "test-session-secret" not in response.text
+
+
+def test_auth_status_rejects_placeholder_credentials(client, monkeypatch):
+    configure_w3(monkeypatch)
+    monkeypatch.setattr(settings, "w3_client_secret", type(settings.w3_client_secret)("replace-with-w3-client-secret"))
+    assert client.get("/api/auth/status").json()["configuration_issues"] == ["W3_CLIENT_SECRET"]
+
+
+def test_auth_status_detects_callback_origin_mismatch(client, monkeypatch):
+    configure_w3(monkeypatch)
+    monkeypatch.setattr(settings, "site_url", "http://127.0.0.1:8080/ai_procurement")
+    status = client.get("/api/auth/status").json()
+    assert status["login_ready"] is False
+    assert "SITE_URL / W3_REDIRECT_URI (origin mismatch)" in status["configuration_issues"]
+
+
+def test_login_from_ip_moves_to_public_domain_before_creating_state(client, monkeypatch):
+    configure_w3(monkeypatch)
+    response = client.get("/api/auth/login?next=/projects", headers={"Host": "127.0.0.1:8080"}, follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"] == "https://cari.rnd.huawei.com/ai_procurement/api/auth/login?next=%2Fprojects"
+    assert "set-cookie" not in response.headers
+
+
+def test_ai4news_domain_keeps_procurement_callback_and_session_isolated(client, monkeypatch):
+    configure_w3(monkeypatch)
+    site = "https://ai4news.rnd.huawei.com/ai_procurement"
+    monkeypatch.setattr(settings, "site_url", site)
+    monkeypatch.setattr(settings, "w3_redirect_uri", site + "/authorize")
+    client.headers["Host"] = "ai4news.rnd.huawei.com"
+    assert "ai4news.rnd.huawei.com" in settings.trusted_host_list
+
+    status = client.get("/ai_procurement/api/auth/status").json()
+    assert status["login_ready"] is True
+    assert status["login_url"] == site + "/api/auth/login"
+    for old_host in ("cari.rnd.huawei.com", "127.0.0.1:8080"):
+        old_login = client.get("/api/auth/login?next=/projects", headers={"Host": old_host}, follow_redirects=False)
+        assert old_login.status_code == 303
+        assert old_login.headers["location"] == site + "/api/auth/login?next=%2Fprojects"
+        assert "set-cookie" not in old_login.headers
+
+    login = client.get("/ai_procurement/api/auth/login?next=/projects", follow_redirects=False)
+    assert login.status_code == 302
+    query = parse_qs(urlparse(login.headers["location"]).query)
+    assert query["redirect_uri"] == [site + "/authorize"]
+    cookie = login.headers["set-cookie"]
+    assert cookie.startswith("cari_session=")
+    assert "path=/ai_procurement" in cookie.lower()
+    assert "domain=" not in cookie.lower()
+    with (
+        patch("app.sso.exchange_code_for_token", new=AsyncMock(return_value={"access_token": "test-token"})),
+        patch("app.sso.fetch_w3_profile", new=AsyncMock(return_value={"uid": "shared-domain-user"})),
+    ):
+        callback = client.get("/ai_procurement/authorize", params={"code": "test-code", "state": query["state"][0]}, follow_redirects=False)
+    assert callback.headers["location"] == site + "/projects"
+    assert client.get("/ai_procurement/api/auth/status").json()["authenticated"] is True
 
 
 @pytest.mark.parametrize("path", ["/api/auth/login", "/authorize?code=test&state=test"])
@@ -163,5 +237,14 @@ def test_w3_logout_clears_session_and_redirects_to_uniportal(client, monkeypatch
     assert logout.status_code == 303
     query = parse_qs(urlparse(logout.headers["location"]).query)
     assert query["clientId"] == ["test-client"]
-    assert query["redirect"] == ["https://cari.rnd.huawei.com/ai_procurement/"]
+    assert query["redirect"] == ["https://cari.rnd.huawei.com/ai_procurement/?signed_out=1"]
     assert client.get("/ai_procurement/api/auth/status").json()["authenticated"] is False
+
+
+def test_logout_without_provider_endpoint_does_not_restart_sso(client, monkeypatch):
+    configure_w3(monkeypatch)
+    monkeypatch.setattr(settings, "w3_logout_url", "")
+    response = client.get("/api/auth/logout", follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"] == "https://cari.rnd.huawei.com/ai_procurement/?signed_out=1"
+    assert client.get("/api/auth/status").json()["authenticated"] is False

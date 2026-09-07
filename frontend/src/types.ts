@@ -3,7 +3,9 @@ export type Lifecycle = 'active' | 'completed';
 export interface Actor {
   id: string;
   name: string;
+  name_en?: string | null;
   role: 'admin' | 'editor' | 'viewer';
+  avatar_url?: string | null;
 }
 
 export interface AuthStatus {
@@ -11,6 +13,8 @@ export interface AuthStatus {
   mode: 'disabled' | 'w3';
   actor: Actor | null;
   login_url?: string;
+  login_ready?: boolean;
+  configuration_issues?: string[];
 }
 
 export interface ProjectInput {
