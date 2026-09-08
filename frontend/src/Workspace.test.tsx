@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import App, { CegDonut, cegColor } from './App';
+import { SIDEBAR_STORAGE_KEY } from './sidebarState';
 import type { AuthStatus, DashboardData } from './types';
 
 const clients: QueryClient[] = [];
@@ -15,8 +16,11 @@ const dashboard: DashboardData = { lifecycle: { active: 3, completed: 1 }, overd
   total_budget: '123456.78', priority: {}, procurement_status: {}, ceg_overview: rows };
 
 describe('executive workspace presentation', () => {
-  it.each(['en', 'zh'])('keeps live figures and navigation in the %s workspace', (language) => {
-    vi.stubGlobal('localStorage', { getItem: () => language });
+  it.each([
+    { language: 'en', collapsed: false }, { language: 'zh', collapsed: false },
+    { language: 'en', collapsed: true }, { language: 'zh', collapsed: true },
+  ])('keeps live figures and navigation in the $language workspace (collapsed=$collapsed)', ({ language, collapsed }) => {
+    vi.stubGlobal('localStorage', { getItem: (key: string) => key === SIDEBAR_STORAGE_KEY ? String(collapsed) : language });
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity, refetchOnMount: false } } });
     clients.push(client);
     client.setQueryData<AuthStatus>(['auth-status'], { authenticated: true, mode: 'w3',
@@ -31,8 +35,14 @@ describe('executive workspace presentation', () => {
     expect(html).not.toContain('class="topbar"');
     const sidebar = html.slice(html.indexOf('<aside'), html.indexOf('</aside>'));
     expect(sidebar).toContain('user-menu-name">Alex Morgan');
-    expect(sidebar).toContain('account-preferences');
+    expect(sidebar).not.toContain('account-preferences');
+    expect(sidebar).toContain('account-language');
     expect(sidebar).toContain('aria-haspopup="menu"');
+    expect(html).toContain(`class="app-shell${collapsed ? ' sidebar-collapsed' : ''}"`);
+    const toggleLabel = language === 'zh' ? (collapsed ? '展开侧栏' : '收起侧栏') : (collapsed ? 'Open sidebar' : 'Close sidebar');
+    expect(sidebar).toContain(`aria-label="${toggleLabel}" aria-expanded="${!collapsed}" aria-controls="workspace-navigation"`);
+    expect(sidebar).toContain(`aria-label="${language === 'zh' ? '仪表盘' : 'Dashboard'}"`);
+    expect(sidebar).toContain('id="workspace-navigation"');
     expect(html).toContain('class="skip-link"');
     expect(html).toContain('href="/projects?lifecycle=active&amp;overdue=true"');
     expect(html).toContain('href="/budget-analysis"');

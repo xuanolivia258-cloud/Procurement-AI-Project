@@ -5,6 +5,7 @@ import { Link, NavLink, Route, Routes, useLocation, useSearchParams } from 'reac
 import { api, ApiError, appUrl, queryString } from './api';
 import AuthGate from './AuthGate';
 import UserMenu from './UserMenu';
+import { readSidebarCollapsed, saveSidebarCollapsed } from './sidebarState';
 import type { Actor, AuditLog, AuthStatus, BudgetAnalysisData, CegAnalysisData, CegAnalysisItem, DashboardData, PaginatedProjects, Project, ProjectInput, ReferenceOption } from './types';
 
 const emptyProject: ProjectInput = {
@@ -56,7 +57,7 @@ const tr = (language: Language, value: string) => language === 'zh' ? zhLabels[v
 const displaySystemValue = (language: Language, value: string | null | undefined) => value ? tr(language, value) : '—';
 
 function NavIcon({ name }: { name: 'dashboard' | 'projects' | 'analysis' | 'options' | 'recycle' }) {
-  const common = { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, 'aria-hidden': true };
+  const common = { width: 20, height: 20, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, 'aria-hidden': true };
   if (name === 'dashboard') return <svg {...common}><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>;
   if (name === 'projects') return <svg {...common}><path d="M3 7.5h7l2 2h9v9.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7.5Z"/><path d="M3 7.5V5a2 2 0 0 1 2-2h4l2 2h4"/><path d="M8 14h8M8 17h6"/></svg>;
   if (name === 'analysis') return <svg {...common}><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/><path d="m4 7 6-4 6 7 5-4"/></svg>;
@@ -71,7 +72,7 @@ function ProjectNavigation({ t }: { t: Translation }) {
   const overdue = onProjects && params.get('overdue') === 'true';
   const completed = onProjects && !overdue && params.get('lifecycle') === 'completed';
   const active = onProjects && !overdue && !completed;
-  return <div className="project-nav-group"><NavLink to="/projects" title={t.projects} aria-expanded={onProjects}><NavIcon name="projects"/><span>{t.projects}</span><b className="project-nav-chevron" aria-hidden="true">⌄</b></NavLink><div className="project-subnav"><Link title={t.active} aria-label={t.active} className={`active-projects${active ? ' active' : ''}`} to="/projects?lifecycle=active" aria-current={active ? 'page' : undefined}><i/>{t.active}</Link><Link title={t.completed} aria-label={t.completed} className={`completed-projects${completed ? ' active' : ''}`} to="/projects?lifecycle=completed" aria-current={completed ? 'page' : undefined}><i/>{t.completed}</Link><Link title={t.overdue} aria-label={t.overdue} className={`overdue-projects${overdue ? ' active' : ''}`} to="/projects?lifecycle=active&overdue=true" aria-current={overdue ? 'page' : undefined}><i/>{t.overdue}</Link></div></div>;
+  return <div className="project-nav-group"><NavLink to="/projects" title={t.projects} aria-label={t.projects}><NavIcon name="projects"/><span>{t.projects}</span></NavLink><div className="project-subnav"><Link title={t.active} aria-label={t.active} className={`active-projects${active ? ' active' : ''}`} to="/projects?lifecycle=active" aria-current={active ? 'page' : undefined}><i/>{t.active}</Link><Link title={t.completed} aria-label={t.completed} className={`completed-projects${completed ? ' active' : ''}`} to="/projects?lifecycle=completed" aria-current={completed ? 'page' : undefined}><i/>{t.completed}</Link><Link title={t.overdue} aria-label={t.overdue} className={`overdue-projects${overdue ? ' active' : ''}`} to="/projects?lifecycle=active&overdue=true" aria-current={overdue ? 'page' : undefined}><i/>{t.overdue}</Link></div></div>;
 }
 
 export function toPayload(values: ProjectInput) {
@@ -80,18 +81,30 @@ export function toPayload(values: ProjectInput) {
 
 function Layout({ language, setLanguage, actor, authMode }: { language: Language; setLanguage: (value: Language) => void; actor: Actor; authMode: AuthStatus['mode'] }) {
   const t = copy[language];
-  return <div className="app-shell">
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsed);
+  const toggleLabel = language === 'zh' ? (sidebarCollapsed ? '展开侧栏' : '收起侧栏')
+    : (sidebarCollapsed ? 'Open sidebar' : 'Close sidebar');
+  const toggleSidebar = () => {
+    const next = !sidebarCollapsed;
+    setSidebarCollapsed(next);
+    saveSidebarCollapsed(next);
+  };
+  return <div className={`app-shell${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
     <a className="skip-link" href="#workspace">{language === 'zh' ? '跳到主内容' : 'Skip to content'}</a>
     <aside className="sidebar">
-      <div className="brand"><span className="brand-mark" role="img" aria-label={language === 'zh' ? '枫叶' : 'Maple leaf'}>🍁︎</span><span>CARI<br/><small>{tr(language, 'Procurement Tracking')}</small></span></div>
-      <p className="nav-caption">{language === 'zh' ? '采购工作台' : 'WORKSPACE'}</p>
-      <nav aria-label={language === 'zh' ? '主导航' : 'Main navigation'}>
-        <NavLink to="/" title={t.dashboard}><NavIcon name="dashboard"/><span>{t.dashboard}</span></NavLink>
+      <div className="sidebar-header">
+        <div className="brand" title={tr(language, 'Procurement Tracking')}><span className="brand-mark" role="img" aria-label={language === 'zh' ? '枫叶' : 'Maple leaf'}>🍁︎</span><span className="brand-label">CARI</span></div>
+        <button className="sidebar-toggle" type="button" title={toggleLabel} aria-label={toggleLabel} aria-expanded={!sidebarCollapsed} aria-controls="workspace-navigation" onClick={toggleSidebar}>
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><rect x="2.5" y="3.5" width="15" height="13" rx="2.5"/><path d="M7.5 3.5v13"/></svg>
+        </button>
+      </div>
+      <nav id="workspace-navigation" aria-label={language === 'zh' ? '主导航' : 'Main navigation'}>
+        <NavLink to="/" title={t.dashboard} aria-label={t.dashboard}><NavIcon name="dashboard"/><span>{t.dashboard}</span></NavLink>
         <ProjectNavigation t={t}/>
-        <NavLink to="/analysis" title={t.analysis}><NavIcon name="analysis"/><span>{t.analysis}</span></NavLink>
-        <NavLink to="/recycle-bin" title={t.recycleBin}><NavIcon name="recycle"/><span>{t.recycleBin}</span></NavLink>
+        <NavLink to="/analysis" title={t.analysis} aria-label={t.analysis}><NavIcon name="analysis"/><span>{t.analysis}</span></NavLink>
+        <NavLink to="/recycle-bin" title={t.recycleBin} aria-label={t.recycleBin}><NavIcon name="recycle"/><span>{t.recycleBin}</span></NavLink>
       </nav>
-      <UserMenu key={`${authMode}:${actor.id}`} actor={actor} authMode={authMode} language={language} onLanguageChange={setLanguage} />
+      <UserMenu key={`${authMode}:${actor.id}`} actor={actor} authMode={authMode} language={language} onLanguageChange={setLanguage} compact={sidebarCollapsed} />
     </aside>
     <main className="main-content">
       <div id="workspace" tabIndex={-1}>

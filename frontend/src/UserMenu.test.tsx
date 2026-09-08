@@ -54,12 +54,22 @@ describe('user presentation', () => {
     expect(html).toContain('本地测试');
   });
 
-  it.each(['en', 'zh'] as const)('provides language switching in the desktop footer and compact account menu (%s)', (language) => {
+  it.each(['en', 'zh'] as const)('keeps language switching inside the account menu without a separate footer row (%s)', (language) => {
     const html = render({}, 'w3', language);
-    expect(html).toContain('class="account-preferences"');
-    expect(html).toContain('account-mobile-language');
+    expect(html).not.toContain('account-preferences');
+    expect(html).not.toContain('account-mobile-language');
+    expect(html).toContain('account-language');
+    const trigger = html.slice(0, html.indexOf('<div class="account-popup"'));
+    expect(trigger).not.toContain('account-language');
+    expect(trigger).not.toContain('account-chevron');
     expect(html).toContain(language === 'zh' ? '切换到英文' : 'Switch to Chinese');
     expect(html).toContain(language === 'zh' ? '退出登录' : 'Sign out');
+  });
+
+  it('keeps the local test marker inside the popup rather than reserving sidebar space', () => {
+    const html = render({}, 'disabled');
+    expect(html.slice(0, html.indexOf('<div class="account-popup"'))).not.toContain('Local test');
+    expect(html).toContain('Local test');
   });
 
   it('falls back to the account ID and escapes unexpected display-name markup', () => {
