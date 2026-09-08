@@ -84,3 +84,17 @@ class ReferenceOption(Base):
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class AccessGrant(Base):
+    __tablename__ = "access_grants"
+
+    employee_id: Mapped[str] = mapped_column(String(200), primary_key=True)
+    role: Mapped[str] = mapped_column(String(20), default="member")
+    cn_name: Mapped[str | None] = mapped_column(String(200))
+    full_name: Mapped[str | None] = mapped_column(String(200))
+    department: Mapped[str | None] = mapped_column(String(300))
+    created_by: Mapped[str] = mapped_column(String(200))
+    updated_by: Mapped[str] = mapped_column(String(200))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)

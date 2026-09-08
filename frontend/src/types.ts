@@ -4,7 +4,7 @@ export interface Actor {
   id: string;
   name: string;
   name_en?: string | null;
-  role: 'admin' | 'editor' | 'viewer';
+  role: 'admin' | 'member' | 'editor' | 'viewer';
   avatar_url?: string | null;
 }
 
@@ -84,6 +84,22 @@ export interface ReferenceOption {
   label_zh: string;
   active: boolean;
   sort_order: number;
+}
+
+export interface AccessGrant {
+  employee_id: string;
+  role: 'admin' | 'member';
+  cn_name: string | null;
+  full_name: string | null;
+  department: string | null;
+  is_initial: boolean;
+}
+
+export interface DirectoryPerson {
+  cnName?: string;
+  fullName?: string;
+  w3Name: string;
+  dptName?: string;
 }
 
 export interface DashboardData {

@@ -17,7 +17,7 @@ class Actor(BaseModel):
     id: str
     name: str
     name_en: str | None = None
-    role: Literal["admin", "editor", "viewer"] = "admin"
+    role: Literal["admin", "member", "editor", "viewer"] = "admin"
     avatar_url: str | None = None
 
     @field_validator("avatar_url", mode="before")
@@ -136,6 +136,23 @@ class ReferenceOptionRead(ReferenceOptionCreate):
     model_config = ConfigDict(from_attributes=True)
     id: int
     active: bool
+
+
+class AccessGrantUpsert(BaseModel):
+    employee_id: str = Field(min_length=1, max_length=200)
+    role: Literal["admin", "member"]
+    cn_name: str | None = Field(default=None, max_length=200)
+    full_name: str | None = Field(default=None, max_length=200)
+    department: str | None = Field(default=None, max_length=300)
+
+    @field_validator("employee_id")
+    @classmethod
+    def normalize_employee_id(cls, value: str):
+        return value.strip().lower()
+
+
+class AccessGrantRead(AccessGrantUpsert):
+    is_initial: bool = False
 
 
 class AuditLogRead(BaseModel):

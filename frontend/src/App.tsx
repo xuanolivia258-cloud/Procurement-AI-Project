@@ -6,7 +6,7 @@ import { api, ApiError, appUrl, queryString } from './api';
 import AuthGate from './AuthGate';
 import UserMenu from './UserMenu';
 import { readSidebarCollapsed, saveSidebarCollapsed } from './sidebarState';
-import type { Actor, AuditLog, AuthStatus, BudgetAnalysisData, CegAnalysisData, CegAnalysisItem, DashboardData, PaginatedProjects, Project, ProjectInput, ReferenceOption } from './types';
+import type { AccessGrant, Actor, AuditLog, AuthStatus, BudgetAnalysisData, CegAnalysisData, CegAnalysisItem, DashboardData, DirectoryPerson, PaginatedProjects, Project, ProjectInput, ReferenceOption } from './types';
 
 const emptyProject: ProjectInput = {
   project_priority: '', ceg: '', requestor: '', bu: '', request_date: '', budget: '', currency: '', exchange_rate: '', usd_amount: '', exchange_rate_at: '', description: '',
@@ -14,11 +14,11 @@ const emptyProject: ProjectInput = {
   pr_approved_date: '', estimated_closing_date: '', contract_required: '', po_release_date: '',
 };
 
-const CEG_OPTIONS = ['Jessie Lin', 'Warren Joseph Litwin', 'Jerry Chang', 'Abby Ho', 'Yiwen Chen'];
+export const CEG_OPTIONS = ['Jessie Lin', 'Warren Joseph Litwin', 'Jerry Chang', 'Abby Ho', 'Yiwen Chen', 'Jiemin Liu'];
 
 const copy = {
-  en: { dashboard: 'Dashboard', projects: 'Projects', analysis: 'Analysis', settings: 'Options', recycleBin: 'Recycle Bin', create: 'Create Project', edit: 'Edit Project', save: 'Save', cancel: 'Cancel', export: 'Export Excel', all: 'All', filters: 'Filters', audit: 'Audit History', active: 'Active', completed: 'Completed', overdue: 'Overdue', totalBudget: 'Total Amount for Active', noProjects: 'No matching projects', conflict: 'This project changed elsewhere. Your entries are preserved; refresh before saving again.' },
-  zh: { dashboard: '仪表盘', projects: '项目', analysis: '分析', settings: '选项管理', recycleBin: '回收站', create: '新建项目', edit: '编辑项目', save: '保存', cancel: '取消', export: '导出 Excel', all: '全部', filters: '筛选', audit: '修改历史', active: '进行中', completed: '已完成', overdue: '已逾期', totalBudget: '进行中项目总金额', noProjects: '没有匹配的项目', conflict: '该项目已被其他用户修改。当前输入已保留，请刷新后重新保存。' },
+  en: { dashboard: 'Dashboard', projects: 'Projects', analysis: 'Analysis', settings: 'Permission Management', recycleBin: 'Recycle Bin', create: 'Create Project', edit: 'Edit Project', save: 'Save', cancel: 'Cancel', export: 'Export Excel', all: 'All', filters: 'Filters', audit: 'Audit History', active: 'Active', completed: 'Completed', overdue: 'Overdue', totalBudget: 'Total Amount for Active', noProjects: 'No matching projects', conflict: 'This project changed elsewhere. Your entries are preserved; refresh before saving again.' },
+  zh: { dashboard: '仪表盘', projects: '项目', analysis: '分析', settings: '权限管理', recycleBin: '回收站', create: '新建项目', edit: '编辑项目', save: '保存', cancel: '取消', export: '导出 Excel', all: '全部', filters: '筛选', audit: '修改历史', active: '进行中', completed: '已完成', overdue: '已逾期', totalBudget: '进行中项目总金额', noProjects: '没有匹配的项目', conflict: '该项目已被其他用户修改。当前输入已保留，请刷新后重新保存。' },
 };
 
 type Language = keyof typeof copy;
@@ -114,7 +114,7 @@ function Layout({ language, setLanguage, actor, authMode }: { language: Language
         <Route path="/analysis" element={<Analysis language={language} />} />
         <Route path="/budget-analysis" element={<BudgetAnalysis language={language} />} />
         <Route path="/recycle-bin" element={<RecycleBin language={language} />} />
-        <Route path="/settings" element={<Options language={language} />} />
+        <Route path="/settings" element={<PermissionManagement language={language} actor={actor} />} />
       </Routes>
       </div>
     </main>
@@ -521,32 +521,26 @@ function AuditDrawer({ project, close }: { project: Project; close: () => void }
   return <div className="drawer-backdrop" onClick={close}><aside className="drawer" onClick={(e) => e.stopPropagation()}><header><div><p className="eyebrow">{project.ceg || `PROJECT ${project.id}`}</p><h2>Audit History</h2></div><button onClick={close}>×</button></header>{isLoading ? <Loading /> : error ? <ErrorBox error={error} /> : <div className="timeline">{data?.map((log) => <article key={log.id}><i /><div><strong>{log.action}</strong><small>{log.actor_name} · {new Date(log.created_at).toLocaleString()}</small>{Object.entries(log.changes).map(([field, change]) => <p key={field}><b>{field.replaceAll('_', ' ')}</b>: {String(change.before ?? '—')} → {String(change.after ?? '—')}</p>)}</div></article>)}</div>}</aside></div>;
 }
 
-function Options({ language }: { language: Language }) {
-  const queryClient = useQueryClient();
-  const { data = [], isLoading, error } = useQuery({ queryKey: ['options', 'all'], queryFn: () => api<ReferenceOption[]>('/api/reference-options?include_inactive=true') });
-  const [draft, setDraft] = useState({ category: 'supplier_type', code: '', label_en: '', label_zh: '', sort_order: 0 });
-  const create = useMutation({ mutationFn: () => api('/api/reference-options', { method: 'POST', body: JSON.stringify(draft) }), onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['options'] }); setDraft({ category: 'supplier_type', code: '', label_en: '', label_zh: '', sort_order: 0 }); } });
-  const toggle = useMutation({ mutationFn: (option: ReferenceOption) => api(`/api/reference-options/${option.id}`, { method: 'PUT', body: JSON.stringify({ label_en: option.label_en, label_zh: option.label_zh, sort_order: option.sort_order, active: !option.active }) }), onSuccess: () => queryClient.invalidateQueries({ queryKey: ['options'] }) });
-  const edit = useMutation({ mutationFn: (option: ReferenceOption) => {
-    const labelEn = prompt(tr(language, 'English label'), option.label_en);
-    if (labelEn === null) return Promise.resolve();
-    const labelZh = prompt('中文标签', option.label_zh);
-    if (labelZh === null) return Promise.resolve();
-    const order = prompt(language === 'zh' ? '排序序号' : 'Sort order', String(option.sort_order));
-    if (order === null) return Promise.resolve();
-    return api(`/api/reference-options/${option.id}`, { method: 'PUT', body: JSON.stringify({ label_en: labelEn, label_zh: labelZh, sort_order: Number(order) || 0, active: option.active }) });
-  }, onSuccess: () => queryClient.invalidateQueries({ queryKey: ['options'] }) });
-  const remove = useMutation({
-    mutationFn: (option: ReferenceOption) => api<void>(`/api/reference-options/${option.id}`, { method: 'DELETE' }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['options'] }),
-  });
-  const deleteOption = (option: ReferenceOption) => {
-    if (confirm(language === 'zh' ? `确定永久删除“${option.label_zh || option.label_en}”吗？此操作无法撤销。` : `Permanently delete "${option.label_en}"? This cannot be undone.`)) remove.mutate(option);
-  };
-  return <section className="page"><div className="page-heading"><div><p className="eyebrow">{tr(language, 'REFERENCE DATA')}</p><h1>{copy[language].settings}</h1><p>{tr(language, 'Manage selectable business values without redeploying the application.')}</p></div></div>
-    <div className="panel option-create"><select value={draft.category} onChange={(e) => setDraft({ ...draft, category: e.target.value })}><option value="supplier_type">{tr(language, 'Supplier Type')}</option><option value="procurement_strategy">{tr(language, 'Procurement Strategy')}</option><option value="procurement_status">{tr(language, 'Procurement Status')}</option></select><input placeholder={tr(language, 'Code')} value={draft.code} onChange={(e) => setDraft({ ...draft, code: e.target.value })}/><input placeholder={tr(language, 'English label')} value={draft.label_en} onChange={(e) => setDraft({ ...draft, label_en: e.target.value })}/><input placeholder="中文标签" value={draft.label_zh} onChange={(e) => setDraft({ ...draft, label_zh: e.target.value })}/><button className="button primary" disabled={!draft.code || !draft.label_en || !draft.label_zh} onClick={() => create.mutate()}>{tr(language, 'Add option')}</button></div>
-    {isLoading ? <Loading language={language} /> : error ? <ErrorBox error={error} language={language} /> : <div className="panel options-list">{data.map((option) => <div key={option.id}><span className="option-category">{tr(language, option.category === 'supplier_type' ? 'Supplier Type' : option.category === 'procurement_strategy' ? 'Procurement Strategy' : 'Procurement Status')}</span><b>{language === 'zh' ? option.label_zh : option.label_en}</b><span>{language === 'zh' ? option.label_en : option.label_zh}</span><code>{option.code}</code><span className="option-buttons"><button onClick={() => edit.mutate(option)}>{tr(language, 'Edit')}</button><button className={option.active ? 'active-toggle' : ''} onClick={() => toggle.mutate(option)}>{tr(language, option.active ? 'Active' : 'Inactive')}</button><button className="delete-option" onClick={() => deleteOption(option)}>{tr(language, 'Delete')}</button></span></div>)}</div>}
-    {(create.error || edit.error || toggle.error || remove.error) && <ErrorBox error={create.error || edit.error || toggle.error || remove.error} language={language} />}
+export const directoryAvatarUrl = (employeeId: string) => `https://w3.huawei.com/w3lab/rest/yellowpage/face/${encodeURIComponent(employeeId.replace(/^[A-Za-z]+/, ''))}/45`;
+const directoryUrl = 'https://wework-digitalspace-g.rnd.huawei.com/gw/etipublicconfig/etipublicconfig/v1/w3';
+export async function searchDirectory(keyword: string, actorId: string): Promise<DirectoryPerson[]> {
+  const response = await fetch(`${directoryUrl}?userInfo=${encodeURIComponent(keyword.trim())}`, { credentials: 'include', headers: { 'x-user-name': actorId } });
+  if (!response.ok) throw new Error(`People search failed (${response.status}).`);
+  const body = await response.json();
+  return Array.isArray(body.result) ? body.result.filter((person: DirectoryPerson) => person?.w3Name) : [];
+}
+
+function PermissionManagement({ language, actor }: { language: Language; actor: Actor }) {
+  const queryClient = useQueryClient(); const zh = language === 'zh'; const [keyword, setKeyword] = useState(''); const [results, setResults] = useState<DirectoryPerson[]>([]); const [searchError, setSearchError] = useState<unknown>(); const [searching, setSearching] = useState(false);
+  const { data = [], isLoading, error } = useQuery({ queryKey: ['access-grants'], queryFn: () => api<AccessGrant[]>('/api/access-grants'), enabled: actor.role === 'admin' });
+  const save = useMutation({ mutationFn: ({ person, role }: { person: DirectoryPerson; role: 'admin' | 'member' }) => api<AccessGrant>(`/api/access-grants/${encodeURIComponent(person.w3Name.toLowerCase())}`, { method: 'PUT', body: JSON.stringify({ employee_id: person.w3Name, role, cn_name: person.cnName || null, full_name: person.fullName || null, department: person.dptName || null }) }), onSuccess: () => queryClient.invalidateQueries({ queryKey: ['access-grants'] }) });
+  const changeRole = useMutation({ mutationFn: ({ grant, role }: { grant: AccessGrant; role: 'admin' | 'member' }) => api<AccessGrant>(`/api/access-grants/${encodeURIComponent(grant.employee_id)}`, { method: 'PUT', body: JSON.stringify({ ...grant, role }) }), onSuccess: () => queryClient.invalidateQueries({ queryKey: ['access-grants'] }) });
+  const remove = useMutation({ mutationFn: (grant: AccessGrant) => api<void>(`/api/access-grants/${encodeURIComponent(grant.employee_id)}`, { method: 'DELETE' }), onSuccess: () => queryClient.invalidateQueries({ queryKey: ['access-grants'] }) });
+  const runSearch = async () => { if (!keyword.trim()) return; setSearching(true); setSearchError(undefined); try { setResults(await searchDirectory(keyword, actor.id)); } catch (reason) { setSearchError(reason); } finally { setSearching(false); } };
+  if (actor.role !== 'admin') return <section className="page"><div className="page-heading"><div><p className="eyebrow">{zh ? '访问控制' : 'ACCESS CONTROL'}</p><h1>{copy[language].settings}</h1></div></div><div className="panel permission-denied">{zh ? '仅管理员可以管理系统权限。' : 'Only administrators can manage system permissions.'}</div></section>;
+  return <section className="page permission-page"><div className="page-heading"><div><p className="eyebrow">{zh ? '访问控制' : 'ACCESS CONTROL'}</p><h1>{copy[language].settings}</h1><p>{zh ? '管理员拥有全部权限；组员只能查看和管理自己创建的项目。' : 'Administrators have full access. Members can only view and manage projects they created.'}</p></div></div>
+    <div className="panel people-search"><h2>{zh ? '添加人员' : 'Add person'}</h2><div><input value={keyword} onChange={(e) => setKeyword(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && runSearch()} placeholder={zh ? '输入姓名或工号' : 'Enter a name or employee ID'}/><button className="button primary" disabled={!keyword.trim() || searching} onClick={runSearch}>{searching ? (zh ? '查询中…' : 'Searching…') : (zh ? '查询' : 'Search')}</button></div>{searchError ? <ErrorBox error={searchError} language={language}/> : null}<div className="people-results">{results.map((person) => <article key={person.w3Name}><img src={directoryAvatarUrl(person.w3Name)} alt=""/><div><strong>{zh ? person.cnName || person.fullName : person.fullName || person.cnName}</strong><span>{person.w3Name} · {person.dptName || '—'}</span></div><button onClick={() => save.mutate({ person, role: 'member' })}>{zh ? '设为组员' : 'Add member'}</button><button onClick={() => save.mutate({ person, role: 'admin' })}>{zh ? '设为管理员' : 'Add admin'}</button></article>)}</div></div>
+    <div className="panel permission-list"><header><h2>{zh ? '已配置人员' : 'Assigned people'}</h2><span>{data.length}</span></header>{isLoading ? <Loading language={language}/> : error ? <ErrorBox error={error} language={language}/> : data.map((grant) => <article key={grant.employee_id}><img src={directoryAvatarUrl(grant.employee_id)} alt=""/><div><strong>{(zh ? grant.cn_name || grant.full_name : grant.full_name || grant.cn_name) || grant.employee_id}</strong><span>{grant.employee_id} · {grant.department || '—'}</span></div><select aria-label={`${grant.employee_id} role`} value={grant.role} disabled={grant.is_initial} onChange={(e) => changeRole.mutate({ grant, role: e.target.value as 'admin' | 'member' })}><option value="admin">{zh ? '管理员' : 'Administrator'}</option><option value="member">{zh ? '组员' : 'Member'}</option></select><span className="initial-admin">{grant.is_initial ? (zh ? '初始管理员' : 'Initial admin') : ''}</span><button className="delete-option" disabled={grant.is_initial || grant.employee_id === actor.id} onClick={() => remove.mutate(grant)}>{zh ? '移除' : 'Remove'}</button></article>)}{(save.error || changeRole.error || remove.error) && <ErrorBox error={save.error || changeRole.error || remove.error} language={language}/>}</div>
   </section>;
 }
 

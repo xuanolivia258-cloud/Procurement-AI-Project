@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     auth_mode: Literal["disabled", "w3"] = "disabled"
     local_actor_id: str = "local-test-user"
     local_actor_name: str = "Local Test User"
+    initial_admin_ids: str = "local-test-user"
     site_url: str = "http://localhost:8080/ai_procurement"
     trusted_hosts: str = "localhost,127.0.0.1,testserver,ai4news.rnd.huawei.com,cari.rnd.huawei.com"
     session_secret: SecretStr = SecretStr("dev-only-change-me")
@@ -64,6 +65,10 @@ class Settings(BaseSettings):
     @property
     def trusted_host_list(self) -> list[str]:
         return [item.strip() for item in self.trusted_hosts.split(",") if item.strip()]
+
+    @property
+    def initial_admin_id_set(self) -> set[str]:
+        return {item.strip().lower() for item in self.initial_admin_ids.split(",") if item.strip()}
 
 
 settings = Settings()

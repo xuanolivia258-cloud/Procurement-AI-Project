@@ -7,6 +7,7 @@ services:
       AUTH_MODE: ${AUTH_MODE:-disabled}
       LOCAL_ACTOR_ID: local-test-user
       LOCAL_ACTOR_NAME: Local Test User
+      INITIAL_ADMIN_IDS: ${INITIAL_ADMIN_IDS:-local-test-user}
       SITE_URL: ${SITE_URL:-http://localhost:8080/ai_procurement}
       TRUSTED_HOSTS: ${TRUSTED_HOSTS:-localhost,127.0.0.1,testserver,ai4news.rnd.huawei.com,cari.rnd.huawei.com}
       SESSION_SECRET: ${SESSION_SECRET:-dev-only-change-me}

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { api, appUrl, AUTH_REQUIRED_EVENT, queryString } from './api';
-import { sortCegByPriority, toPayload } from './App';
+import { CEG_OPTIONS, directoryAvatarUrl, searchDirectory, sortCegByPriority, toPayload } from './App';
 
 afterEach(() => { vi.unstubAllGlobals(); });
 
@@ -66,5 +66,24 @@ describe('CEG priority ordering', () => {
     expect(sortCegByPriority(items).map((item) => item.ceg)).toEqual([
       'High CEG', 'Second High CEG', 'Medium CEG', 'Normal CEG',
     ]);
+  });
+});
+
+describe('permission directory', () => {
+  it('searches with the current W3 account and browser credentials', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ result: [{ cnName: '张三', fullName: 'Zhang San', w3Name: 'l00123456', dptName: 'Procurement' }] }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(searchDirectory('张 三', 'current-user')).resolves.toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('userInfo=%E5%BC%A0%20%E4%B8%89'), expect.objectContaining({ credentials: 'include', headers: { 'x-user-name': 'current-user' } }));
+  });
+
+  it('keeps leading zeroes after removing the employee ID prefix', () => {
+    expect(directoryAvatarUrl('l00123456')).toContain('/00123456/45');
+  });
+});
+
+describe('CEG options', () => {
+  it('includes Jiemin Liu in the project form', () => {
+    expect(CEG_OPTIONS).toContain('Jiemin Liu');
   });
 });

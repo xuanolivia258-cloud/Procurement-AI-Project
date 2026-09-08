@@ -35,9 +35,9 @@ from .database import Base, SessionLocal, engine, get_db
 from .logging_config import (
     log_access, log_integration_event, log_operation, log_request_error, summarize_http_response,
 )
-from .models import Lifecycle, Project, ProjectAuditLog, ReferenceOption, utcnow
+from .models import AccessGrant, Lifecycle, Project, ProjectAuditLog, ReferenceOption, utcnow
 from .schemas import (
-    Actor, AuditLogRead, BulkProjectDeleteRequest, Currency, LifecycleRequest, PaginatedProjects, ProjectCreate,
+    AccessGrantRead, AccessGrantUpsert, Actor, AuditLogRead, BulkProjectDeleteRequest, Currency, LifecycleRequest, PaginatedProjects, ProjectCreate,
     ProjectRead, ProjectUpdate, ReferenceOptionCreate, ReferenceOptionRead,
     ReferenceOptionUpdate,
 )
@@ -204,9 +204,11 @@ def query_projects(
     closing_to: date | None = None,
     po_release_from: date | None = None,
     po_release_to: date | None = None,
-    overdue: bool | None = None,
+    overdue: bool | None = None, actor: Actor | None = None,
 ):
     filters = [Project.deleted_at.is_(None)]
+    if actor is not None and actor.role != "admin":
+        filters.append(Project.created_by == actor.id)
     if lifecycle:
         filters.append(Project.lifecycle == lifecycle)
     if priority:
@@ -250,6 +252,21 @@ def query_projects(
             Project.estimated_closing_date >= date.today(),
         ))
     return filters
+
+
+def require_admin(actor: Actor) -> None:
+    if actor.role != "admin":
+        raise HTTPException(403, detail={"code": "ADMIN_REQUIRED", "message": "Administrator permission is required."})
+
+
+def require_project_access(project: Project | None, actor: Actor, include_deleted: bool = False) -> Project:
+    if not project or (not include_deleted and project.deleted_at is not None) or (actor.role != "admin" and project.created_by != actor.id):
+        raise HTTPException(404, detail={"code": "NOT_FOUND", "message": "Project not found."})
+    return project
+
+
+def ownership_filter(actor: Actor):
+    return [] if actor.role == "admin" else [Project.created_by == actor.id]
 
 
 def commit_or_conflict(db: Session, ceg_message: str = "CEG already exists."):
@@ -647,9 +664,9 @@ def list_projects(
     closing_from: date | None = None, closing_to: date | None = None,
     po_release_from: date | None = None, po_release_to: date | None = None,
     overdue: bool | None = None, sort: str = "priority", direction: str = "desc",
-    db: Session = Depends(get_db), _actor: Actor = Depends(get_actor),
+    db: Session = Depends(get_db), actor: Actor = Depends(get_actor),
 ):
-    filters = query_projects(lifecycle, priority, ceg, keyword, procurement_status, bu, requestor, pr_approved_from, pr_approved_to, closing_from, closing_to, po_release_from, po_release_to, overdue)
+    filters = query_projects(lifecycle, priority, ceg, keyword, procurement_status, bu, requestor, pr_approved_from, pr_approved_to, closing_from, closing_to, po_release_from, po_release_to, overdue, actor)
     total = db.scalar(select(func.count()).select_from(Project).where(*filters)) or 0
     if sort == "priority":
         ordering = (PRIORITY_ORDER.asc(), Project.updated_at.desc(), Project.id.desc())
@@ -662,10 +679,8 @@ def list_projects(
 
 
 @app.get("/api/projects/{project_id}", response_model=ProjectRead)
-def get_project(project_id: int, db: Session = Depends(get_db), _actor: Actor = Depends(get_actor)):
-    project = db.get(Project, project_id)
-    if not project or project.deleted_at is not None:
-        raise HTTPException(404, detail={"code": "NOT_FOUND", "message": "Project not found."})
+def get_project(project_id: int, db: Session = Depends(get_db), actor: Actor = Depends(get_actor)):
+    project = require_project_access(db.get(Project, project_id), actor)
     return project_read(project)
 
 
@@ -692,9 +707,7 @@ def create_project(payload: ProjectCreate, request: Request, db: Session = Depen
 
 @app.put("/api/projects/{project_id}", response_model=ProjectRead)
 def update_project(project_id: int, payload: ProjectUpdate, request: Request, db: Session = Depends(get_db), actor: Actor = Depends(get_actor)):
-    project = db.get(Project, project_id)
-    if not project or project.deleted_at is not None:
-        raise HTTPException(404, detail={"code": "NOT_FOUND", "message": "Project not found."})
+    project = require_project_access(db.get(Project, project_id), actor)
     if project.version != payload.version:
         raise HTTPException(409, detail={"code": "VERSION_CONFLICT", "message": "This project was changed by another user. Refresh and try again.", "current_version": project.version})
     changes = {}
@@ -724,9 +737,7 @@ def update_project(project_id: int, payload: ProjectUpdate, request: Request, db
 
 
 def change_lifecycle(project_id: int, target: Lifecycle, action: str, payload: LifecycleRequest, db: Session, actor: Actor, request_id: str):
-    project = db.get(Project, project_id)
-    if not project or project.deleted_at is not None:
-        raise HTTPException(404, detail={"code": "NOT_FOUND", "message": "Project not found."})
+    project = require_project_access(db.get(Project, project_id), actor)
     if project.version != payload.version:
         raise HTTPException(409, detail={"code": "VERSION_CONFLICT", "message": "This project was changed by another user."})
     allowed = {"completed": {Lifecycle.active.value}, "reopened": {Lifecycle.completed.value}}
@@ -761,9 +772,7 @@ def reopen_project(project_id: int, payload: LifecycleRequest, request: Request,
 
 @app.delete("/api/projects/{project_id}", status_code=204)
 def delete_project(project_id: int, request: Request, version: int = Query(ge=1), db: Session = Depends(get_db), actor: Actor = Depends(get_actor)):
-    project = db.get(Project, project_id)
-    if not project or project.deleted_at is not None:
-        raise HTTPException(404, detail={"code": "NOT_FOUND", "message": "Project not found."})
+    project = require_project_access(db.get(Project, project_id), actor)
     if project.version != version:
         raise HTTPException(409, detail={"code": "VERSION_CONFLICT", "message": "This project changed before it could be deleted. Refresh and try again."})
     now = utcnow()
@@ -781,7 +790,7 @@ def delete_project(project_id: int, request: Request, version: int = Query(ge=1)
 @app.post("/api/projects/bulk-delete")
 def bulk_delete_projects(payload: BulkProjectDeleteRequest, request: Request, db: Session = Depends(get_db), actor: Actor = Depends(get_actor)):
     requested = {item.id: item.version for item in payload.projects}
-    projects = list(db.scalars(select(Project).where(Project.id.in_(requested))))
+    projects = list(db.scalars(select(Project).where(Project.id.in_(requested), *ownership_filter(actor))))
     found = {project.id: project for project in projects}
     missing = sorted(set(requested) - set(found))
     conflicts = sorted(project_id for project_id, project in found.items() if project.version != requested[project_id] or project.deleted_at is not None)
@@ -801,8 +810,8 @@ def bulk_delete_projects(payload: BulkProjectDeleteRequest, request: Request, db
 
 
 @app.get("/api/recycle-bin", response_model=PaginatedProjects)
-def list_recycle_bin(page: int = Query(1, ge=1), page_size: int = Query(25, ge=1, le=100), db: Session = Depends(get_db), _actor: Actor = Depends(get_actor)):
-    filters = [Project.deleted_at.is_not(None)]
+def list_recycle_bin(page: int = Query(1, ge=1), page_size: int = Query(25, ge=1, le=100), db: Session = Depends(get_db), actor: Actor = Depends(get_actor)):
+    filters = [Project.deleted_at.is_not(None), *ownership_filter(actor)]
     total = db.scalar(select(func.count()).select_from(Project).where(*filters)) or 0
     items = db.scalars(select(Project).where(*filters).order_by(Project.deleted_at.desc(), Project.id.desc()).offset((page - 1) * page_size).limit(page_size)).all()
     return PaginatedProjects(items=[project_read(item) for item in items], total=total, page=page, page_size=page_size, pages=max(1, math.ceil(total / page_size)))
@@ -811,7 +820,7 @@ def list_recycle_bin(page: int = Query(1, ge=1), page_size: int = Query(25, ge=1
 @app.post("/api/recycle-bin/restore")
 def restore_projects(payload: BulkProjectDeleteRequest, request: Request, db: Session = Depends(get_db), actor: Actor = Depends(get_actor)):
     requested = {item.id: item.version for item in payload.projects}
-    projects = list(db.scalars(select(Project).where(Project.id.in_(requested))))
+    projects = list(db.scalars(select(Project).where(Project.id.in_(requested), *ownership_filter(actor))))
     found = {project.id: project for project in projects}
     missing = sorted(set(requested) - set(found))
     conflicts = sorted(project_id for project_id, project in found.items() if project.version != requested[project_id] or project.deleted_at is None)
@@ -834,7 +843,7 @@ def restore_projects(payload: BulkProjectDeleteRequest, request: Request, db: Se
 @app.post("/api/recycle-bin/permanent-delete")
 def permanently_delete_projects(payload: BulkProjectDeleteRequest, request: Request, db: Session = Depends(get_db), actor: Actor = Depends(get_actor)):
     requested = {item.id: item.version for item in payload.projects}
-    projects = list(db.scalars(select(Project).where(Project.id.in_(requested))))
+    projects = list(db.scalars(select(Project).where(Project.id.in_(requested), *ownership_filter(actor))))
     found = {project.id: project for project in projects}
     missing = sorted(set(requested) - set(found))
     conflicts = sorted(project_id for project_id, project in found.items() if project.version != requested[project_id] or project.deleted_at is None)
@@ -848,9 +857,8 @@ def permanently_delete_projects(payload: BulkProjectDeleteRequest, request: Requ
 
 
 @app.get("/api/projects/{project_id}/audit-logs", response_model=list[AuditLogRead])
-def audit_logs(project_id: int, db: Session = Depends(get_db), _actor: Actor = Depends(get_actor)):
-    if not db.get(Project, project_id):
-        raise HTTPException(404, detail={"code": "NOT_FOUND", "message": "Project not found."})
+def audit_logs(project_id: int, db: Session = Depends(get_db), actor: Actor = Depends(get_actor)):
+    require_project_access(db.get(Project, project_id), actor, include_deleted=True)
     logs = db.scalars(select(ProjectAuditLog).where(ProjectAuditLog.project_id == project_id).order_by(ProjectAuditLog.created_at.desc())).all()
     return [AuditLogRead(id=log.id, project_id=log.project_id, action=log.action, changes=json.loads(log.changes_json), actor_id=log.actor_id, actor_name=log.actor_name, created_at=log.created_at) for log in logs]
 
@@ -865,8 +873,63 @@ def list_options(category: str | None = None, include_inactive: bool = False, db
     return db.scalars(statement.order_by(ReferenceOption.category, ReferenceOption.sort_order, ReferenceOption.label_en)).all()
 
 
+@app.get("/api/access-grants", response_model=list[AccessGrantRead])
+def list_access_grants(db: Session = Depends(get_db), actor: Actor = Depends(get_actor)):
+    require_admin(actor)
+    grants = {grant.employee_id: grant for grant in db.scalars(select(AccessGrant).order_by(AccessGrant.employee_id))}
+    rows = [AccessGrantRead(
+        employee_id=employee_id, role="admin", is_initial=True,
+        cn_name=grants.get(employee_id).cn_name if employee_id in grants else None,
+        full_name=grants.get(employee_id).full_name if employee_id in grants else None,
+        department=grants.get(employee_id).department if employee_id in grants else None,
+    ) for employee_id in sorted(settings.initial_admin_id_set)]
+    rows.extend(AccessGrantRead(
+        employee_id=grant.employee_id, role=grant.role, cn_name=grant.cn_name,
+        full_name=grant.full_name, department=grant.department, is_initial=False,
+    ) for grant in grants.values() if grant.employee_id not in settings.initial_admin_id_set)
+    return rows
+
+
+@app.put("/api/access-grants/{employee_id}", response_model=AccessGrantRead)
+def upsert_access_grant(employee_id: str, payload: AccessGrantUpsert, db: Session = Depends(get_db), actor: Actor = Depends(get_actor)):
+    require_admin(actor)
+    normalized = employee_id.strip().lower()
+    if normalized != payload.employee_id:
+        raise HTTPException(422, detail={"code": "EMPLOYEE_ID_MISMATCH", "message": "Employee ID does not match the request path."})
+    if normalized in settings.initial_admin_id_set and payload.role != "admin":
+        raise HTTPException(409, detail={"code": "INITIAL_ADMIN_PROTECTED", "message": "An initial administrator cannot be demoted."})
+    if normalized == actor.id and payload.role != "admin":
+        raise HTTPException(409, detail={"code": "SELF_DEMOTION_BLOCKED", "message": "You cannot remove your own administrator permission."})
+    grant = db.get(AccessGrant, normalized)
+    if grant is None:
+        grant = AccessGrant(employee_id=normalized, created_by=actor.id, updated_by=actor.id)
+        db.add(grant)
+    grant.role = "admin" if normalized in settings.initial_admin_id_set else payload.role
+    grant.cn_name, grant.full_name, grant.department = payload.cn_name, payload.full_name, payload.department
+    grant.updated_by, grant.updated_at = actor.id, utcnow()
+    db.commit()
+    log_operation("access_grant_upsert", actor.id, message=f"employee_id={normalized}; role={grant.role}")
+    return AccessGrantRead(employee_id=normalized, role=grant.role, cn_name=grant.cn_name, full_name=grant.full_name, department=grant.department, is_initial=normalized in settings.initial_admin_id_set)
+
+
+@app.delete("/api/access-grants/{employee_id}", status_code=204)
+def delete_access_grant(employee_id: str, db: Session = Depends(get_db), actor: Actor = Depends(get_actor)):
+    require_admin(actor)
+    normalized = employee_id.strip().lower()
+    if normalized in settings.initial_admin_id_set or normalized == actor.id:
+        raise HTTPException(409, detail={"code": "ADMIN_PROTECTED", "message": "This administrator assignment is protected."})
+    grant = db.get(AccessGrant, normalized)
+    if not grant:
+        raise HTTPException(404, detail={"code": "NOT_FOUND", "message": "Permission assignment not found."})
+    db.delete(grant)
+    db.commit()
+    log_operation("access_grant_delete", actor.id, message=f"employee_id={normalized}")
+    return Response(status_code=204)
+
+
 @app.post("/api/reference-options", response_model=ReferenceOptionRead, status_code=201)
-def create_option(payload: ReferenceOptionCreate, db: Session = Depends(get_db), _actor: Actor = Depends(get_actor)):
+def create_option(payload: ReferenceOptionCreate, db: Session = Depends(get_db), actor: Actor = Depends(get_actor)):
+    require_admin(actor)
     option = ReferenceOption(**payload.model_dump())
     db.add(option)
     try:
@@ -879,7 +942,8 @@ def create_option(payload: ReferenceOptionCreate, db: Session = Depends(get_db),
 
 
 @app.put("/api/reference-options/{option_id}", response_model=ReferenceOptionRead)
-def update_option(option_id: int, payload: ReferenceOptionUpdate, db: Session = Depends(get_db), _actor: Actor = Depends(get_actor)):
+def update_option(option_id: int, payload: ReferenceOptionUpdate, db: Session = Depends(get_db), actor: Actor = Depends(get_actor)):
+    require_admin(actor)
     option = db.get(ReferenceOption, option_id)
     if not option:
         raise HTTPException(404, detail={"code": "NOT_FOUND", "message": "Option not found."})
@@ -891,7 +955,8 @@ def update_option(option_id: int, payload: ReferenceOptionUpdate, db: Session = 
 
 
 @app.delete("/api/reference-options/{option_id}", status_code=204)
-def delete_option(option_id: int, db: Session = Depends(get_db), _actor: Actor = Depends(get_actor)):
+def delete_option(option_id: int, db: Session = Depends(get_db), actor: Actor = Depends(get_actor)):
+    require_admin(actor)
     option = db.get(ReferenceOption, option_id)
     if not option:
         raise HTTPException(404, detail={"code": "NOT_FOUND", "message": "Option not found."})
@@ -913,20 +978,20 @@ def delete_option(option_id: int, db: Session = Depends(get_db), _actor: Actor =
 
 
 @app.get("/api/dashboard")
-def dashboard(db: Session = Depends(get_db), _actor: Actor = Depends(get_actor)):
-    active_filter = Project.deleted_at.is_(None)
-    lifecycle_counts = dict(db.execute(select(Project.lifecycle, func.count()).where(active_filter).group_by(Project.lifecycle)).all())
-    priority_counts = dict(db.execute(select(Project.project_priority, func.count()).where(active_filter, Project.project_priority.is_not(None)).group_by(Project.project_priority)).all())
-    status_counts = dict(db.execute(select(Project.procurement_status, func.count()).where(active_filter, Project.procurement_status.is_not(None)).group_by(Project.procurement_status)).all())
-    overdue = db.scalar(select(func.count()).select_from(Project).where(active_filter, Project.lifecycle == "active", Project.estimated_closing_date < date.today())) or 0
+def dashboard(db: Session = Depends(get_db), actor: Actor = Depends(get_actor)):
+    scope = [Project.deleted_at.is_(None), *ownership_filter(actor)]
+    lifecycle_counts = dict(db.execute(select(Project.lifecycle, func.count()).where(*scope).group_by(Project.lifecycle)).all())
+    priority_counts = dict(db.execute(select(Project.project_priority, func.count()).where(*scope, Project.project_priority.is_not(None)).group_by(Project.project_priority)).all())
+    status_counts = dict(db.execute(select(Project.procurement_status, func.count()).where(*scope, Project.procurement_status.is_not(None)).group_by(Project.procurement_status)).all())
+    overdue = db.scalar(select(func.count()).select_from(Project).where(*scope, Project.lifecycle == "active", Project.estimated_closing_date < date.today())) or 0
     total_budget = db.scalar(select(func.coalesce(func.sum(Project.usd_amount), 0)).where(
-        active_filter, Project.lifecycle == Lifecycle.active.value,
+        *scope, Project.lifecycle == Lifecycle.active.value,
     )) or 0
     ceg_name = func.coalesce(func.nullif(Project.ceg, ""), "Unassigned")
     ceg_amount = func.coalesce(func.sum(Project.usd_amount), 0)
     ceg_overview_rows = db.execute(
         select(ceg_name, func.count(), ceg_amount)
-        .where(active_filter)
+        .where(*scope)
         .group_by(ceg_name)
         .order_by(ceg_amount.desc(), func.count().desc())
     ).all()
@@ -951,7 +1016,7 @@ def ceg_analysis(
     from_month: str | None = None, to_month: str | None = None,
     ceg: str | None = None, lifecycle: str | None = None,
     priority: str | None = None, bu: str | None = None,
-    db: Session = Depends(get_db), _actor: Actor = Depends(get_actor),
+    db: Session = Depends(get_db), actor: Actor = Depends(get_actor),
 ):
     start = parse_month(from_month)
     end = parse_month(to_month, end=True)
@@ -962,7 +1027,7 @@ def ceg_analysis(
     if priority and priority not in {"High", "Medium", "Normal"}:
         raise HTTPException(422, detail={"code": "INVALID_PRIORITY", "message": "Priority must be High, Medium, or Normal."})
 
-    filters = [Project.deleted_at.is_(None)]
+    filters = [Project.deleted_at.is_(None), *ownership_filter(actor)]
     if start:
         filters.append(Project.pr_approved_date >= start)
     if end:
@@ -997,7 +1062,7 @@ def ceg_analysis(
         "normal_priority_count": row[5] or 0, "completed_count": row[6] or 0,
         "overdue_count": row[7] or 0,
     } for row in rows]
-    option_filters = [Project.deleted_at.is_(None)]
+    option_filters = [Project.deleted_at.is_(None), *ownership_filter(actor)]
     ceg_options = list(db.scalars(select(Project.ceg).where(*option_filters, Project.ceg.is_not(None), Project.ceg != "").distinct().order_by(Project.ceg)))
     bu_options = list(db.scalars(select(Project.bu).where(*option_filters, Project.bu.is_not(None), Project.bu != "").distinct().order_by(Project.bu)))
     return {
@@ -1012,12 +1077,12 @@ def ceg_analysis(
 
 
 @app.get("/api/budget-analysis")
-def budget_analysis(from_month: str | None = None, to_month: str | None = None, db: Session = Depends(get_db), _actor: Actor = Depends(get_actor)):
+def budget_analysis(from_month: str | None = None, to_month: str | None = None, db: Session = Depends(get_db), actor: Actor = Depends(get_actor)):
     start = parse_month(from_month)
     end = parse_month(to_month, end=True)
     if start and end and start > end:
         raise HTTPException(422, detail={"code": "INVALID_MONTH_RANGE", "message": "From Month cannot be later than To Month."})
-    filters = [Project.deleted_at.is_(None), Project.lifecycle == Lifecycle.active.value, Project.pr_approved_date.is_not(None)]
+    filters = [Project.deleted_at.is_(None), Project.lifecycle == Lifecycle.active.value, Project.pr_approved_date.is_not(None), *ownership_filter(actor)]
     if start:
         filters.append(Project.pr_approved_date >= start)
     if end:
@@ -1139,10 +1204,10 @@ def export_monthly_report(
 ):
     start = parse_month(month)
     end = parse_month(month, end=True)
-    filters = [Project.deleted_at.is_(None), Project.pr_approved_date >= start, Project.pr_approved_date <= end]
+    filters = [Project.deleted_at.is_(None), Project.pr_approved_date >= start, Project.pr_approved_date <= end, *ownership_filter(actor)]
     previous_end = start - timedelta(days=1)
     previous_start = date(previous_end.year, previous_end.month, 1)
-    previous_filters = [Project.deleted_at.is_(None), Project.pr_approved_date >= previous_start, Project.pr_approved_date <= previous_end]
+    previous_filters = [Project.deleted_at.is_(None), Project.pr_approved_date >= previous_start, Project.pr_approved_date <= previous_end, *ownership_filter(actor)]
     if ceg:
         filters.append(Project.ceg == ceg)
         previous_filters.append(Project.ceg == ceg)
@@ -1192,7 +1257,7 @@ def export_projects(
     db: Session = Depends(get_db), actor: Actor = Depends(get_actor),
 ):
     started = time.perf_counter()
-    filters = query_projects(lifecycle, priority, ceg, keyword, procurement_status, bu, requestor, pr_approved_from, pr_approved_to, closing_from, closing_to, po_release_from, po_release_to, overdue)
+    filters = query_projects(lifecycle, priority, ceg, keyword, procurement_status, bu, requestor, pr_approved_from, pr_approved_to, closing_from, closing_to, po_release_from, po_release_to, overdue, actor)
     projects = db.scalars(select(Project).where(*filters).order_by(PRIORITY_ORDER.asc(), Project.updated_at.desc(), Project.id.desc())).all()
     workbook = Workbook()
     sheet = workbook.active
