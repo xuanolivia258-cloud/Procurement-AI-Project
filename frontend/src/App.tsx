@@ -80,18 +80,26 @@ export function toPayload(values: ProjectInput) {
 
 function Layout({ language, setLanguage, actor, authMode }: { language: Language; setLanguage: (value: Language) => void; actor: Actor; authMode: AuthStatus['mode'] }) {
   const t = copy[language];
+  const { pathname } = useLocation();
+  const pageTitle = pathname === '/projects' ? t.projects : pathname === '/analysis' ? t.analysis
+    : pathname === '/budget-analysis' ? tr(language, 'FINANCIAL OVERVIEW')
+    : pathname === '/recycle-bin' ? t.recycleBin : pathname === '/settings' ? t.settings : t.dashboard;
   return <div className="app-shell">
+    <a className="skip-link" href="#workspace">{language === 'zh' ? '跳到主内容' : 'Skip to content'}</a>
     <aside className="sidebar">
       <div className="brand"><span className="brand-mark" role="img" aria-label={language === 'zh' ? '枫叶' : 'Maple leaf'}>🍁︎</span><span>CARI<br/><small>{tr(language, 'Procurement Tracking')}</small></span></div>
-      <nav>
+      <p className="nav-caption">{language === 'zh' ? '采购工作台' : 'WORKSPACE'}</p>
+      <nav aria-label={language === 'zh' ? '主导航' : 'Main navigation'}>
         <NavLink to="/" title={t.dashboard}><NavIcon name="dashboard"/><span>{t.dashboard}</span></NavLink>
         <ProjectNavigation t={t}/>
         <NavLink to="/analysis" title={t.analysis}><NavIcon name="analysis"/><span>{t.analysis}</span></NavLink>
         <NavLink to="/recycle-bin" title={t.recycleBin}><NavIcon name="recycle"/><span>{t.recycleBin}</span></NavLink>
       </nav>
+      <div className="sidebar-footnote"><span>CARI</span><small>{tr(language, 'Procurement Tracking')}</small></div>
     </aside>
     <main className="main-content">
-      <header className="topbar"><span className="environment">{authMode === 'w3' ? 'HUAWEI W3' : tr(language, 'LOCAL TEST ENVIRONMENT')}</span><div className="topbar-actions"><button className="language" onClick={() => setLanguage(language === 'en' ? 'zh' : 'en')}>{language === 'en' ? '中文' : 'English'}</button><UserMenu key={`${authMode}:${actor.id}`} actor={actor} authMode={authMode} language={language} /></div></header>
+      <header className="topbar"><div className="workspace-context"><span>{tr(language, 'Procurement Tracking')}</span><i aria-hidden="true">/</i><strong>{pageTitle}</strong></div><div className="topbar-actions">{authMode !== 'w3' && <span className="environment">{tr(language, 'LOCAL TEST ENVIRONMENT')}</span>}<button className="language" onClick={() => setLanguage(language === 'en' ? 'zh' : 'en')}>{language === 'en' ? '中文' : 'English'}</button><UserMenu key={`${authMode}:${actor.id}`} actor={actor} authMode={authMode} language={language} /></div></header>
+      <div id="workspace" tabIndex={-1}>
       <Routes>
         <Route path="/" element={<Dashboard language={language} />} />
         <Route path="/projects" element={<Projects language={language} />} />
@@ -100,6 +108,7 @@ function Layout({ language, setLanguage, actor, authMode }: { language: Language
         <Route path="/recycle-bin" element={<RecycleBin language={language} />} />
         <Route path="/settings" element={<Options language={language} />} />
       </Routes>
+      </div>
     </main>
   </div>;
 }
@@ -113,7 +122,7 @@ function Dashboard({ language }: { language: Language }) {
   return <section className="page dashboard-page">
     <div className="page-heading"><div><p className="eyebrow">{tr(language, 'PROJECT OVERVIEW')}</p><h1>{t.dashboard}</h1></div><div className="heading-actions"><button className="button primary" type="button" onClick={() => setCreatingProject(true)}>＋ {t.create}</button></div></div>
     <div className="metric-grid">
-      <Metric language={language} label={t.active} value={data.lifecycle.active || 0} tone="purple" to="/projects?lifecycle=active" />
+      <Metric language={language} label={t.active} value={data.lifecycle.active || 0} tone="active" to="/projects?lifecycle=active" />
       <Metric language={language} label={t.completed} value={data.lifecycle.completed || 0} tone="green" to="/projects?lifecycle=completed" />
       <Metric language={language} label={t.overdue} value={data.overdue} tone="red" to="/projects?lifecycle=active&overdue=true" />
       <Metric language={language} label={t.totalBudget} value={`USD ${Number(data.total_budget).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} tone="blue" wide to="/budget-analysis" />
@@ -128,28 +137,24 @@ function Dashboard({ language }: { language: Language }) {
 function CegOverviewChart({ items, language }: { items: DashboardData['ceg_overview']; language: Language }) {
   const totalProjects = items.reduce((sum, item) => sum + item.project_count, 0);
   const totalAmount = items.reduce((sum, item) => sum + Number(item.usd_amount), 0);
-  return <article className="panel ceg-preview"><header><div><h2>{tr(language, 'CEG Overview')}</h2><p>{tr(language, 'All active and completed projects')}</p></div><Link to="/analysis">{tr(language, 'View Full Analysis →')}</Link></header>{items.length ? <div className="ceg-pies"><CegDonut title={tr(language, 'Project Count')} items={items} values={items.map((item) => item.project_count)} centerValue={String(totalProjects)} centerLabel={tr(language, 'Total Projects')}/><CegDonut title={tr(language, 'USD Amount')} items={items} values={items.map((item) => Number(item.usd_amount))} centerValue={`USD ${formatCompactNumber(totalAmount)}`} centerLabel={tr(language, 'Total Amount')}/></div> : <div className="analysis-empty compact">{language === 'zh' ? '暂无 CEG 数据。' : 'No CEG data available.'}</div>}</article>;
+  return <article className="panel ceg-preview"><header><div><h2>{tr(language, 'CEG Overview')}</h2><p>{tr(language, 'All active and completed projects')}</p></div><Link to="/analysis">{tr(language, 'View Full Analysis →')}</Link></header>{items.length ? <div className="ceg-pies"><CegDonut title={tr(language, 'Project Count')} items={items} values={items.map((item) => item.project_count)} centerValue={String(totalProjects)} centerLabel={tr(language, 'Total Projects')}/><CegDonut title={tr(language, 'USD Amount')} items={items} values={items.map((item) => Number(item.usd_amount))} centerValue={`USD ${formatCompactNumber(totalAmount)}`} centerLabel={tr(language, 'Total Amount')} kind="amount"/></div> : <div className="analysis-empty compact">{language === 'zh' ? '暂无 CEG 数据。' : 'No CEG data available.'}</div>}</article>;
 }
 
-function cegColor(index: number) { return `hsl(${Math.round((index * 137.508 + 214) % 360)} 68% ${index % 3 === 0 ? 48 : index % 3 === 1 ? 56 : 42}%)`; }
+export function cegColor(index: number) {
+  // A restrained categorical palette shared by both CEG charts; labels remain explicit.
+  const colors = ['#2f7bff', '#15998c', '#6985ba', '#d99b35', '#6b67af', '#405c80', '#47a5c1', '#b56c76', '#75964c', '#898fa3', '#b18042', '#82706a'];
+  return colors[((index % colors.length) + colors.length) % colors.length];
+}
 
-function CegDonut({ title, items, values, centerValue, centerLabel }: { title: string; items: DashboardData['ceg_overview']; values: number[]; centerValue: string; centerLabel: string }) {
+export function CegDonut({ title, items, values, centerValue, centerLabel, kind = 'count' }: { title: string; items: DashboardData['ceg_overview']; values: number[]; centerValue: string; centerLabel: string; kind?: 'count' | 'amount' }) {
   const entries = items.map((item, index) => ({ item, value: values[index], color: cegColor(index) })).filter((entry) => entry.value > 0);
   const total = entries.reduce((sum, entry) => sum + entry.value, 0);
   let angle = -90;
   const slices = entries.map((entry) => { const start = angle; const end = angle + entry.value / total * 360; angle = end; return { ...entry, start, end, mid: (start + end) / 2 }; });
-  const labels = layoutDonutLabels(slices);
-  return <div className="ceg-pie-card"><h3>{title}</h3><svg className="ceg-donut-svg" viewBox="0 0 440 320" role="img" aria-label={`${title} by CEG. ${centerLabel} ${centerValue}`}>
-    {total <= 0 ? <circle cx="220" cy="155" r="87" fill="none" stroke="#ededf0" strokeWidth="44"/> : slices.length === 1 ? <circle cx="220" cy="155" r="87" fill="none" stroke={slices[0].color} strokeWidth="44"><title>{`${slices[0].item.ceg}: ${formatAmount(slices[0].value)}`}</title></circle> : slices.map((slice) => <path key={slice.item.ceg} d={donutPath(220, 155, 109, 65, slice.start, slice.end)} fill={slice.color} stroke="#fff" strokeWidth="2"><title>{`${slice.item.ceg}: ${formatAmount(slice.value)}`}</title></path>)}
-    {labels.map((label) => <g key={label.item.ceg}><polyline points={`${label.x1},${label.y1} ${label.x2},${label.y2} ${label.x3},${label.y3}`} fill="none" stroke={label.color} strokeWidth="1.5"/><circle cx={label.x1} cy={label.y1} r="3" fill={label.color}/><text x={label.textX} y={label.y3 + 3} textAnchor={label.anchor} className="ceg-callout-label">{label.item.ceg}</text></g>)}
-    <circle cx="220" cy="155" r="62" fill="#fff"/><text x="220" y="151" textAnchor="middle" className="ceg-donut-total">{centerValue}</text><text x="220" y="170" textAnchor="middle" className="ceg-donut-caption">{centerLabel}</text>
-  </svg></div>;
-}
-
-function layoutDonutLabels<T extends { item: DashboardData['ceg_overview'][number]; color: string; mid: number }>(slices: T[]) {
-  const positioned = slices.map((slice) => { const radians = slice.mid * Math.PI / 180; const right = Math.cos(radians) >= 0; return { ...slice, right, x1: 220 + Math.cos(radians) * 111, y1: 155 + Math.sin(radians) * 111, x2: 220 + Math.cos(radians) * 129, y2: 155 + Math.sin(radians) * 129, y3: 155 + Math.sin(radians) * 142 }; });
-  for (const right of [false, true]) { const side = positioned.filter((item) => item.right === right).sort((a, b) => a.y3 - b.y3); side.forEach((item, index) => { item.y3 = Math.max(18 + index * 18, item.y3, index ? side[index - 1].y3 + 18 : 18); }); if (side.length && side[side.length - 1].y3 > 296) { const shift = side[side.length - 1].y3 - 296; side.forEach((item) => { item.y3 -= shift; }); } }
-  return positioned.map((item) => ({ ...item, x3: item.right ? 350 : 90, textX: item.right ? 355 : 85, anchor: item.right ? 'start' as const : 'end' as const }));
+  return <div className="ceg-pie-card"><h3>{title}</h3><div className="ceg-chart-body"><svg className="ceg-donut-svg" viewBox="0 0 240 240" role="img" aria-label={`${title} by CEG. ${centerLabel} ${centerValue}`}>
+    {total <= 0 ? <circle cx="120" cy="120" r="86" fill="none" stroke="#eaf0f7" strokeWidth="28"/> : slices.length === 1 ? <circle cx="120" cy="120" r="86" fill="none" stroke={slices[0].color} strokeWidth="28"><title>{`${slices[0].item.ceg}: ${formatAmount(slices[0].value)}`}</title></circle> : slices.map((slice) => <path key={slice.item.ceg} d={donutPath(120, 120, 100, 72, slice.start, slice.end)} fill={slice.color} stroke="#fff" strokeWidth="2"><title>{`${slice.item.ceg}: ${formatAmount(slice.value)}`}</title></path>)}
+    <text x="120" y="119" textAnchor="middle" className="ceg-donut-total">{centerValue}</text><text x="120" y="140" textAnchor="middle" className="ceg-donut-caption">{centerLabel}</text>
+  </svg><ul className="ceg-distribution-legend" aria-label={`${title} — CEG`}>{entries.map(({ item, value, color }) => <li key={item.ceg}><i style={{ background: color }} aria-hidden="true"/><span>{item.ceg}<small>{kind === 'amount' ? `USD ${formatAmount(value)}` : value.toLocaleString()}</small></span><strong>{(value / total * 100).toFixed(1)}%</strong></li>)}</ul></div></div>;
 }
 
 function donutPath(cx: number, cy: number, outer: number, inner: number, start: number, end: number) {
@@ -160,9 +165,9 @@ function donutPath(cx: number, cy: number, outer: number, inner: number, start: 
 }
 
 function Metric({ label, value, tone, wide = false, to, language }: { label: string; value: string | number; tone: string; wide?: boolean; to?: string; language: Language }) {
-  const content = <><span>{label}</span><strong>{value}</strong>{to && <small>{tr(language, 'View projects →')}</small>}</>;
+  const content = <><div className="metric-heading"><span>{label}</span><span className="metric-icon" aria-hidden="true">{tone === 'green' ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><circle cx="12" cy="12" r="8.5"/><path d="m8 12 2.5 2.5L16 9"/></svg> : tone === 'red' ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/></svg> : <NavIcon name={wide ? 'analysis' : 'projects'} />}</span></div><strong>{value}</strong>{to && <small>{tr(language, wide ? 'View Full Analysis →' : 'View projects →')}</small>}</>;
   return to
-    ? <Link className={`metric metric-link ${tone} ${wide ? 'wide' : ''}`} to={to} aria-label={`${label}: ${value}. ${tr(language, 'View projects →')}`}>{content}</Link>
+    ? <Link className={`metric metric-link ${tone} ${wide ? 'wide' : ''}`} to={to} aria-label={`${label}: ${value}. ${tr(language, wide ? 'View Full Analysis →' : 'View projects →')}`}>{content}</Link>
     : <article className={`metric ${tone} ${wide ? 'wide' : ''}`}>{content}</article>;
 }
 

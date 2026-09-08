@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import './styles.css';
+import './workspace-theme.css';
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: 15_000, retry: 1 } } });
 const routerBase = (import.meta.env.BASE_URL || '/').replace(/\/$/, '') || undefined;
