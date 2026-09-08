@@ -80,10 +80,6 @@ export function toPayload(values: ProjectInput) {
 
 function Layout({ language, setLanguage, actor, authMode }: { language: Language; setLanguage: (value: Language) => void; actor: Actor; authMode: AuthStatus['mode'] }) {
   const t = copy[language];
-  const { pathname } = useLocation();
-  const pageTitle = pathname === '/projects' ? t.projects : pathname === '/analysis' ? t.analysis
-    : pathname === '/budget-analysis' ? tr(language, 'FINANCIAL OVERVIEW')
-    : pathname === '/recycle-bin' ? t.recycleBin : pathname === '/settings' ? t.settings : t.dashboard;
   return <div className="app-shell">
     <a className="skip-link" href="#workspace">{language === 'zh' ? '跳到主内容' : 'Skip to content'}</a>
     <aside className="sidebar">
@@ -95,10 +91,9 @@ function Layout({ language, setLanguage, actor, authMode }: { language: Language
         <NavLink to="/analysis" title={t.analysis}><NavIcon name="analysis"/><span>{t.analysis}</span></NavLink>
         <NavLink to="/recycle-bin" title={t.recycleBin}><NavIcon name="recycle"/><span>{t.recycleBin}</span></NavLink>
       </nav>
-      <div className="sidebar-footnote"><span>CARI</span><small>{tr(language, 'Procurement Tracking')}</small></div>
+      <UserMenu key={`${authMode}:${actor.id}`} actor={actor} authMode={authMode} language={language} onLanguageChange={setLanguage} />
     </aside>
     <main className="main-content">
-      <header className="topbar"><div className="workspace-context"><span>{tr(language, 'Procurement Tracking')}</span><i aria-hidden="true">/</i><strong>{pageTitle}</strong></div><div className="topbar-actions">{authMode !== 'w3' && <span className="environment">{tr(language, 'LOCAL TEST ENVIRONMENT')}</span>}<button className="language" onClick={() => setLanguage(language === 'en' ? 'zh' : 'en')}>{language === 'en' ? '中文' : 'English'}</button><UserMenu key={`${authMode}:${actor.id}`} actor={actor} authMode={authMode} language={language} /></div></header>
       <div id="workspace" tabIndex={-1}>
       <Routes>
         <Route path="/" element={<Dashboard language={language} />} />

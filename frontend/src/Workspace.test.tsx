@@ -28,6 +28,11 @@ describe('executive workspace presentation', () => {
     expect(html).toContain('Alex Morgan');
     expect(html).toContain('href="/ai_procurement/api/auth/logout"');
     expect(html).toContain('id="workspace"');
+    expect(html).not.toContain('class="topbar"');
+    const sidebar = html.slice(html.indexOf('<aside'), html.indexOf('</aside>'));
+    expect(sidebar).toContain('user-menu-name">Alex Morgan');
+    expect(sidebar).toContain('account-preferences');
+    expect(sidebar).toContain('aria-haspopup="menu"');
     expect(html).toContain('class="skip-link"');
     expect(html).toContain('href="/projects?lifecycle=active&amp;overdue=true"');
     expect(html).toContain('href="/budget-analysis"');

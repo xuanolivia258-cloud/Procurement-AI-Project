@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { MemoryRouter } from 'react-router-dom';
 import UserMenu, { englishDisplayName, safeAvatarUrl, userInitials } from './UserMenu';
 import type { Actor } from './types';
 
 const actor: Actor = { id: 'test.user', name: 'Olivia Fang', role: 'admin' };
 const render = (overrides: Partial<Actor> = {}, mode: 'w3' | 'disabled' = 'w3', language: 'en' | 'zh' = 'en') =>
-  renderToStaticMarkup(<UserMenu actor={{ ...actor, ...overrides }} authMode={mode} language={language} />);
+  renderToStaticMarkup(<MemoryRouter><UserMenu actor={{ ...actor, ...overrides }} authMode={mode} language={language} onLanguageChange={() => {}} /></MemoryRouter>);
 
 describe('user presentation', () => {
   it.each([
@@ -13,12 +14,16 @@ describe('user presentation', () => {
     ['李森 l00477035', '李'], ['', '?'], ['𠮷田', '𠮷'],
   ])('uses readable initials for %s', (name, expected) => { expect(userInitials(name)).toBe(expected); });
 
-  it('shows only the name and avatar with a separate visible sign-out action', () => {
+  it('shows an accessible account trigger with settings and sign-out initially hidden', () => {
     const html = render();
     expect(html).toContain('user-menu-name">Olivia Fang');
     expect(html).toContain('<span>OF</span>');
-    expect(html).not.toContain('aria-expanded');
-    expect(html).not.toContain(' hidden=');
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain('aria-haspopup="menu"');
+    expect(html).toContain('aria-label="Account menu: Olivia Fang"');
+    expect(html).toContain('role="menu" aria-label="Account actions" hidden=""');
+    expect(html).toContain('href="/settings"');
+    expect(html).toContain('Settings');
     expect(html).not.toContain('test.user');
     expect(html).not.toContain('Administrator');
     expect(html).toContain('Sign out');
@@ -45,6 +50,16 @@ describe('user presentation', () => {
     const html = render({ name: 'Local Test User' }, 'disabled', 'zh');
     expect(html).toContain('Local Test User');
     expect(html).not.toContain('/api/auth/logout');
+    expect(html).toContain('设置');
+    expect(html).toContain('本地测试');
+  });
+
+  it.each(['en', 'zh'] as const)('provides language switching in the desktop footer and compact account menu (%s)', (language) => {
+    const html = render({}, 'w3', language);
+    expect(html).toContain('class="account-preferences"');
+    expect(html).toContain('account-mobile-language');
+    expect(html).toContain(language === 'zh' ? '切换到英文' : 'Switch to Chinese');
+    expect(html).toContain(language === 'zh' ? '退出登录' : 'Sign out');
   });
 
   it('falls back to the account ID and escapes unexpected display-name markup', () => {

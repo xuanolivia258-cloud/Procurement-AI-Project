@@ -20,7 +20,7 @@ afterEach(() => { clients.splice(0).forEach((client) => client.clear()); });
 function renderGate(client: QueryClient, path = '/') {
   return renderToStaticMarkup(<QueryClientProvider client={client}>
     <MemoryRouter initialEntries={[path]}>
-      <AuthGate language="zh">{(actor, mode) => <div>Project workspace: {actor.id} / {mode}<UserMenu actor={actor} authMode={mode} language="en" /></div>}</AuthGate>
+      <AuthGate language="zh">{(actor, mode) => <div>Project workspace: {actor.id} / {mode}<UserMenu actor={actor} authMode={mode} language="en" onLanguageChange={() => {}} /></div>}</AuthGate>
     </MemoryRouter>
   </QueryClientProvider>);
 }
