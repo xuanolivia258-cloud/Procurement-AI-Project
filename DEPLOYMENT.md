@@ -46,6 +46,7 @@ Put the generated value in `SESSION_SECRET`, then set at least:
 
 ```dotenv
 AUTH_MODE=w3
+INITIAL_ADMIN_IDS=l00123456,z00876543
 SITE_URL=https://ai4news.rnd.huawei.com/ai_procurement
 FRONTEND_BIND_HOST=0.0.0.0
 TRUSTED_HOSTS=ai4news.rnd.huawei.com,cari.rnd.huawei.com,7.184.9.192,localhost,127.0.0.1
@@ -56,12 +57,23 @@ W3_CLIENT_ID=<w3-client-id>
 W3_CLIENT_SECRET=<w3-client-secret>
 W3_REDIRECT_URI=https://ai4news.rnd.huawei.com/ai_procurement/authorize
 W3_VERIFY_SSL=true
-W3_DEFAULT_ROLE=admin
 ```
 
-Keep the five Uniportal endpoint defaults from `.env.example`. `admin` retains
-the current application's full-access behavior. Change the default role only
-after endpoint-level role checks are introduced.
+Replace the sample `INITIAL_ADMIN_IDS` with the initial administrators' **full W3
+employee IDs**, separated by English commas. No names are needed. Keep account
+prefixes and leading zeros; spaces around IDs and letter case are ignored. Only
+the authenticated ID is matched, never Chinese/English names or Owner-directory
+display data. All listed IDs become administrators without a directory lookup
+or a pre-existing permission record, and cannot be demoted/removed in the UI.
+Unlisted accounts are members unless an administrator explicitly grants access
+through permission management. `W3_DEFAULT_ROLE` is obsolete and ignored, even
+if an existing `.env` still sets it to `admin`.
+
+After changing the list, run `docker compose up -d --force-recreate backend frontend`
+and refresh the page. No database reset or name synchronization is required.
+To retain administrator access as the local test account when W3 is disabled,
+include `local-test-user` in the list as well. Keep the five Uniportal endpoint
+defaults from `.env.example`.
 
 Use a W3 client authorized for this application. The approved shared client
 uses the news credentials, but procurement retains its own callback

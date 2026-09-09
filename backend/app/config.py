@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     auth_mode: Literal["disabled", "w3"] = "disabled"
     local_actor_id: str = "local-test-user"
     local_actor_name: str = "Local Test User"
+    # Full W3 employee IDs only, comma-separated; names are display metadata.
     initial_admin_ids: str = "local-test-user"
     site_url: str = "http://localhost:8080/ai_procurement"
     trusted_hosts: str = "localhost,127.0.0.1,testserver,ai4news.rnd.huawei.com,cari.rnd.huawei.com"
@@ -30,6 +31,7 @@ class Settings(BaseSettings):
     w3_redirect_uri: str = "https://ai4news.rnd.huawei.com/ai_procurement/authorize"
     w3_request_timeout_seconds: float = 10.0
     w3_verify_ssl: bool = True
+    # Legacy setting accepted for existing deployments, but never used to grant permissions.
     w3_default_role: Literal["admin", "editor", "viewer"] = "admin"
     w3_directory_enabled: bool = True
     w3_directory_url: str = "https://wework-digitalspace-g.rnd.huawei.com/gw/etipublicconfig/etipublicconfig/v1/w3"

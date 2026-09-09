@@ -1,27 +1,29 @@
-from fastapi import HTTPException, Request, status
+from fastapi import Depends, HTTPException, Request, status
+from sqlalchemy.orm import Session
 
 from .config import settings
+from .database import get_db
+from .models import AccessGrant
 from .schemas import Actor
 
 
-def _effective_actor(actor: Actor) -> Actor:
+def _effective_actor(actor: Actor, db: Session) -> Actor:
+    # Only the authenticated employee ID is an authorization key. Display names,
+    # directory profile data and roles saved in older sessions are not trusted.
     employee_id = actor.id.strip().lower()
     role = "member"
     if employee_id in settings.initial_admin_id_set:
         role = "admin"
     else:
-        from .database import SessionLocal
-        from .models import AccessGrant
-        with SessionLocal() as db:
-            grant = db.get(AccessGrant, employee_id)
-            if grant is not None:
-                role = grant.role
+        grant = db.get(AccessGrant, employee_id)
+        if grant is not None:
+            role = grant.role
     return actor.model_copy(update={"id": employee_id, "role": role})
 
 
-def get_actor(request: Request) -> Actor:
+def get_actor(request: Request, db: Session = Depends(get_db)) -> Actor:
     if settings.auth_mode == "disabled":
-        actor = _effective_actor(Actor(id=settings.local_actor_id, name=settings.local_actor_name, role="admin"))
+        actor = _effective_actor(Actor(id=settings.local_actor_id, name=settings.local_actor_name), db)
         request.state.actor_id = actor.id
         return actor
 
@@ -45,6 +47,6 @@ def get_actor(request: Request) -> Actor:
             },
         ) from exc
 
-    actor = _effective_actor(actor)
+    actor = _effective_actor(actor, db)
     request.state.actor_id = actor.id
     return actor

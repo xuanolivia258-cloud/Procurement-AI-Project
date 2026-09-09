@@ -199,7 +199,66 @@ def test_w3_authorization_code_flow_creates_local_session(client, monkeypatch):
     assert callback.headers["location"] == "https://cari.rnd.huawei.com/ai_procurement/projects"
     status = client.get("/ai_procurement/api/auth/status")
     assert status.status_code == 200
-    assert status.json()["actor"] == {"id": "test.user", "name": "Test User", "role": "admin"}
+    assert status.json()["actor"] == {"id": "test.user", "name": "Test User", "role": "member"}
+
+
+@pytest.mark.parametrize("profile,expected_role", [
+    ({"uid": " L00123456 "}, "admin"),
+    ({"uid": "Z00876543", "displayName": "任意姓名", "displayNameEn": "Different Name"}, "admin"),
+    ({"uid": "l99999999", "displayName": "l00123456", "displayNameEn": "z00876543"}, "member"),
+    ({"uid": "l001234560", "displayName": "任意姓名"}, "member"),
+    ({"uid": "00123456", "displayName": "任意姓名"}, "member"),
+])
+def test_initial_administrators_match_only_full_employee_ids(client, monkeypatch, profile, expected_role):
+    configure_w3(monkeypatch)
+    monkeypatch.setattr(settings, "initial_admin_ids", " L00123456, z00876543 ,, l00123456, ")
+    # Existing deployments may still carry this setting; it must not grant access.
+    monkeypatch.setattr(settings, "w3_default_role", "admin")
+    login = client.get("/ai_procurement/api/auth/login", follow_redirects=False)
+    state = parse_qs(urlparse(login.headers["location"]).query)["state"][0]
+    with (
+        patch("app.sso.exchange_code_for_token", new=AsyncMock(return_value={"access_token": "test-token"})),
+        patch("app.sso.fetch_w3_profile", new=AsyncMock(return_value=profile)),
+    ):
+        callback = client.get("/ai_procurement/authorize", params={"code": "test-code", "state": state}, follow_redirects=False)
+    assert callback.status_code == 303
+    assert "auth_error" not in callback.headers["location"]
+    # Nginx strips /ai_procurement before forwarding business API requests and
+    # their cookies. Reproduce that forwarding when calling the backend directly.
+    client.cookies.set("cari_session", client.cookies.get("cari_session"), path="/")
+
+    # Identity alone is enough: no name registration or directory request is needed.
+    with patch("httpx.AsyncClient", side_effect=AssertionError("Permissions must not call the directory")):
+        status = client.get("/ai_procurement/api/auth/status").json()
+        assert status["actor"]["id"] == profile["uid"].strip().lower()
+        assert status["actor"]["role"] == expected_role
+        assert client.get("/ai_procurement/api/auth/profile").json()["role"] == expected_role
+        grants = client.get("/api/access-grants")
+        assert grants.status_code == (200 if expected_role == "admin" else 403)
+        if expected_role == "admin":
+            assert [row["employee_id"] for row in grants.json()] == ["l00123456", "z00876543"]
+            assert all(row["is_initial"] and row["cn_name"] is None and row["full_name"] is None for row in grants.json())
+            assert client.put("/api/access-grants/z00876543", json={
+                "employee_id": "z00876543", "role": "member",
+            }).status_code == 409
+            assert client.delete("/api/access-grants/z00876543").status_code == 409
+
+            # Recalculate on the next request rather than trusting the signed session's role.
+            monkeypatch.setattr(settings, "initial_admin_ids", "")
+            assert client.get("/ai_procurement/api/auth/status").json()["actor"]["role"] == "member"
+            assert client.get("/api/access-grants").status_code == 403
+
+
+def test_disabled_mode_status_uses_the_same_id_based_permissions(client, monkeypatch):
+    monkeypatch.setattr(settings, "auth_mode", "disabled")
+    monkeypatch.setattr(settings, "initial_admin_ids", "l00123456,z00876543")
+    monkeypatch.setattr(settings, "local_actor_id", "local-test-user")
+    monkeypatch.setattr(settings, "local_actor_name", "l00123456")
+    assert client.get("/api/auth/status").json()["actor"]["role"] == "member"
+    assert client.get("/api/access-grants").status_code == 403
+    monkeypatch.setattr(settings, "initial_admin_ids", "l00123456,z00876543,local-test-user")
+    assert client.get("/api/auth/status").json()["actor"]["role"] == "admin"
+    assert client.get("/api/access-grants").status_code == 200
 
 
 def test_w3_login_rejects_external_next_url(client, monkeypatch):

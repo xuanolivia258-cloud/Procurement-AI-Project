@@ -34,6 +34,28 @@ separate IAM token used by the exchange-rate integration.
 
 The old root-level `index.html`, `script.js`, `styles.css`, `server.js`, and `package.json` are retained only as prototype reference. The supported application lives in `frontend/` and `backend/`.
 
+## Initial administrators
+
+In the repository-root `.env`, configure **only full W3 employee IDs**, separated
+by English commas (replace these example IDs with real accounts):
+
+```dotenv
+INITIAL_ADMIN_IDS=l00123456,z00876543
+```
+
+No Chinese or English names are required. IDs are matched exactly against the
+authenticated account after trimming spaces and ignoring case; retain account
+prefixes and leading zeros. Names and Owner-directory results are for display
+only and never grant administrator access. Every listed account is an initial
+administrator and cannot be demoted or removed through the permissions page.
+Other accounts are members unless explicitly granted an administrator role there.
+The legacy `W3_DEFAULT_ROLE` setting no longer grants permissions.
+
+After editing `.env`, run `docker compose up -d --force-recreate backend frontend`,
+then refresh the page. Restarting alone does not apply environment changes.
+The default `INITIAL_ADMIN_IDS=local-test-user` is for local testing; if you turn
+W3 off and want the test account to remain an administrator, include that ID too.
+
 ## Start with Docker
 
 Install Docker Desktop, then run from this directory:

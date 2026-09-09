@@ -7,9 +7,11 @@ from urllib.parse import urlencode, urlparse
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
+from sqlalchemy.orm import Session
 
 from .config import settings
 from .auth import get_actor
+from .database import get_db
 from .directory import owner_profile
 from .logging_config import log_integration_event, log_request_error, summarize_http_response
 from .profile import avatar_from_profile
@@ -214,24 +216,23 @@ def actor_from_profile(profile: dict) -> Actor:
     # Keep the audit/display name unchanged; the header can prefer W3's English name.
     english_name = profile.get("displayNameEn")
     english_name = english_name.strip()[:200] if isinstance(english_name, str) else ""
+    # Login establishes identity only; get_actor resolves permissions by employee
+    # ID on each request, including /api/auth/status. Legacy default roles do not grant access.
     return Actor(id=identity.lower(), name=name, name_en=english_name or None,
-                 role=settings.w3_default_role, avatar_url=avatar_from_profile(profile))
+                 role="member", avatar_url=avatar_from_profile(profile))
 
 
 @router.get("/api/auth/status")
-def auth_status(request: Request, response: Response):
+def auth_status(request: Request, response: Response, db: Session = Depends(get_db)):
     # The browser must see a changed deployment switch, even after a failed login.
     response.headers["Cache-Control"] = "no-store"
     if settings.auth_mode == "disabled":
         request.session.clear()
-        actor = Actor(id=settings.local_actor_id, name=settings.local_actor_name, role="admin")
-        request.state.actor_id = actor.id
-        return {"authenticated": True, "mode": "disabled", "actor": actor.model_dump(exclude_none=True)}
-    raw_actor = request.session.get("actor")
     try:
-        actor = Actor.model_validate(raw_actor)
-    except Exception:
-        request.session.pop("actor", None)
+        actor = get_actor(request, db)
+    except HTTPException as exc:
+        if exc.status_code != 401:
+            raise
         issues = _w3_configuration_issues()
         return {
             "authenticated": False, "mode": "w3", "actor": None,
@@ -240,8 +241,7 @@ def auth_status(request: Request, response: Response):
             # Setting names only: never expose client secrets or session keys.
             "configuration_issues": issues,
         }
-    request.state.actor_id = actor.id
-    return {"authenticated": True, "mode": "w3", "actor": actor.model_dump(exclude_none=True)}
+    return {"authenticated": True, "mode": settings.auth_mode, "actor": actor.model_dump(exclude_none=True)}
 
 
 @router.get("/api/auth/profile")
