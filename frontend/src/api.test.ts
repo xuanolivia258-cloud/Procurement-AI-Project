@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { api, appUrl, AUTH_REQUIRED_EVENT, queryString } from './api';
-import { CEG_OPTIONS, directoryAvatarUrl, searchDirectory, sortCegByPriority, toPayload } from './App';
+import { CEG_OPTIONS, directoryAvatarUrl, normalizeDirectoryQuery, searchDirectory, sortCegByPriority, toPayload } from './App';
 
 afterEach(() => { vi.unstubAllGlobals(); });
 
@@ -79,6 +79,11 @@ describe('permission directory', () => {
 
   it('keeps leading zeroes after removing the employee ID prefix', () => {
     expect(directoryAvatarUrl('l00123456')).toContain('/00123456/45');
+  });
+
+  it('normalizes employee IDs without changing name searches', () => {
+    expect(normalizeDirectoryQuery(' L 00123456 ')).toBe('l00123456');
+    expect(normalizeDirectoryQuery(' Zhang San ')).toBe('Zhang San');
   });
 });
 
