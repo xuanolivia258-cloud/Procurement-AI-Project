@@ -68,6 +68,7 @@ def test_login_returns_photo_without_storing_w3_tokens_in_cookie(client, monkeyp
     monkeypatch.setattr(settings, "w3_client_id", "test-client")
     monkeypatch.setattr(settings, "w3_client_secret", type(settings.w3_client_secret)("test-secret"))
     monkeypatch.setattr(settings, "session_secret", type(settings.session_secret)("test-session-secret"))
+    monkeypatch.setattr(settings, "initial_admin_ids", "test.user")
     client.headers["Host"] = "ai4news.rnd.huawei.com"
     login = client.get("/ai_procurement/api/auth/login", follow_redirects=False)
     state = parse_qs(urlparse(login.headers["location"]).query)["state"][0]
@@ -86,7 +87,9 @@ def test_login_returns_photo_without_storing_w3_tokens_in_cookie(client, monkeyp
     assert status["actor"]["name_en"] == "Olivia Fang"
     assert status["actor"]["avatar_url"] == "https://photos.huawei.com/a.jpg"
     session = json.loads(base64.b64decode(client.cookies.get("cari_session").split(".")[0]))
-    assert session == {"actor": status["actor"]}
+    # The cookie stores identity/profile only. Effective authorization is resolved
+    # from the allowlist on every request and is never trusted from the session.
+    assert session["actor"] == {**status["actor"], "role": "member"}
     assert "private-w3-token" not in json.dumps(session)
     assert "not-for-session" not in json.dumps(session)
 

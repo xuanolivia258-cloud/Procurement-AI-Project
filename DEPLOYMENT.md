@@ -65,8 +65,8 @@ prefixes and leading zeros; spaces around IDs and letter case are ignored. Only
 the authenticated ID is matched, never Chinese/English names or Owner-directory
 display data. All listed IDs become administrators without a directory lookup
 or a pre-existing permission record, and cannot be demoted/removed in the UI.
-Unlisted accounts are members unless an administrator explicitly grants access
-through permission management. `W3_DEFAULT_ROLE` is obsolete and ignored, even
+Unlisted accounts are denied access until an administrator explicitly adds them
+as an administrator or member through permission management. `W3_DEFAULT_ROLE` is obsolete and ignored, even
 if an existing `.env` still sets it to `admin`.
 
 After changing the list, run `docker compose up -d --force-recreate backend frontend`

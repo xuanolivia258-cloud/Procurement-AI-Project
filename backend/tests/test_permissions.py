@@ -38,12 +38,30 @@ def test_permissions_ignore_names_and_old_session_roles(client, monkeypatch):
         for employee_id, saved_role, expected_role in [
             ("L00123456", "member", "admin"),
             ("z00876543", "member", "admin"),
-            ("l99999999", "admin", "member"),
+            ("l99999999", "admin", None),
         ]:
             request = Request({"type": "http", "session": {"actor": {
                 "id": employee_id, "name": "相同姓名", "name_en": "Same Name", "role": saved_role,
             }}})
-            assert get_actor(request, db).role == expected_role
+            if expected_role is None:
+                with pytest.raises(Exception) as exc:
+                    get_actor(request, db)
+                assert exc.value.status_code == 403
+                assert exc.value.detail["code"] == "ACCESS_DENIED"
+            else:
+                assert get_actor(request, db).role == expected_role
+
+
+def test_unassigned_authenticated_user_is_denied(client, monkeypatch):
+    monkeypatch.setattr(settings, "auth_mode", "w3")
+    monkeypatch.setattr(settings, "initial_admin_ids", "l00123456")
+    request = Request({"type": "http", "session": {"actor": {
+        "id": "l99999999", "name": "Unknown User", "role": "admin",
+    }}})
+    with contextmanager(app.dependency_overrides[get_db])() as db, pytest.raises(Exception) as exc:
+        get_actor(request, db)
+    assert exc.value.status_code == 403
+    assert exc.value.detail["code"] == "ACCESS_DENIED"
 
 
 def test_member_only_sees_and_changes_own_projects(client):

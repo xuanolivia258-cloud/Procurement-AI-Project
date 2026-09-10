@@ -95,6 +95,7 @@ def test_ai4news_domain_keeps_procurement_callback_and_session_isolated(client, 
     site = "https://ai4news.rnd.huawei.com/ai_procurement"
     monkeypatch.setattr(settings, "site_url", site)
     monkeypatch.setattr(settings, "w3_redirect_uri", site + "/authorize")
+    monkeypatch.setattr(settings, "initial_admin_ids", "shared-domain-user")
     client.headers["Host"] = "ai4news.rnd.huawei.com"
     assert "ai4news.rnd.huawei.com" in settings.trusted_host_list
 
@@ -179,6 +180,7 @@ def test_failed_w3_login_can_be_disabled_and_reenabled(client, monkeypatch):
 
 def test_w3_authorization_code_flow_creates_local_session(client, monkeypatch):
     configure_w3(monkeypatch)
+    monkeypatch.setattr(settings, "initial_admin_ids", "test.user")
     login = client.get("/ai_procurement/api/auth/login?next=/ai_procurement/projects", follow_redirects=False)
     assert login.status_code == 302
     authorize_url = urlparse(login.headers["location"])
@@ -199,15 +201,15 @@ def test_w3_authorization_code_flow_creates_local_session(client, monkeypatch):
     assert callback.headers["location"] == "https://cari.rnd.huawei.com/ai_procurement/projects"
     status = client.get("/ai_procurement/api/auth/status")
     assert status.status_code == 200
-    assert status.json()["actor"] == {"id": "test.user", "name": "Test User", "role": "member"}
+    assert status.json()["actor"] == {"id": "test.user", "name": "Test User", "role": "admin"}
 
 
 @pytest.mark.parametrize("profile,expected_role", [
     ({"uid": " L00123456 "}, "admin"),
     ({"uid": "Z00876543", "displayName": "任意姓名", "displayNameEn": "Different Name"}, "admin"),
-    ({"uid": "l99999999", "displayName": "l00123456", "displayNameEn": "z00876543"}, "member"),
-    ({"uid": "l001234560", "displayName": "任意姓名"}, "member"),
-    ({"uid": "00123456", "displayName": "任意姓名"}, "member"),
+    ({"uid": "l99999999", "displayName": "l00123456", "displayNameEn": "z00876543"}, None),
+    ({"uid": "l001234560", "displayName": "任意姓名"}, None),
+    ({"uid": "00123456", "displayName": "任意姓名"}, None),
 ])
 def test_initial_administrators_match_only_full_employee_ids(client, monkeypatch, profile, expected_role):
     configure_w3(monkeypatch)
@@ -229,7 +231,12 @@ def test_initial_administrators_match_only_full_employee_ids(client, monkeypatch
 
     # Identity alone is enough: no name registration or directory request is needed.
     with patch("httpx.AsyncClient", side_effect=AssertionError("Permissions must not call the directory")):
-        status = client.get("/ai_procurement/api/auth/status").json()
+        status_response = client.get("/ai_procurement/api/auth/status")
+        if expected_role is None:
+            assert status_response.status_code == 403
+            assert status_response.json()["error"]["code"] == "ACCESS_DENIED"
+            return
+        status = status_response.json()
         assert status["actor"]["id"] == profile["uid"].strip().lower()
         assert status["actor"]["role"] == expected_role
         assert client.get("/ai_procurement/api/auth/profile").json()["role"] == expected_role
@@ -245,8 +252,9 @@ def test_initial_administrators_match_only_full_employee_ids(client, monkeypatch
 
             # Recalculate on the next request rather than trusting the signed session's role.
             monkeypatch.setattr(settings, "initial_admin_ids", "")
-            assert client.get("/ai_procurement/api/auth/status").json()["actor"]["role"] == "member"
-            assert client.get("/api/access-grants").status_code == 403
+            denied = client.get("/ai_procurement/api/auth/status")
+            assert denied.status_code == 403
+            assert denied.json()["error"]["code"] == "ACCESS_DENIED"
 
 
 def test_disabled_mode_status_uses_the_same_id_based_permissions(client, monkeypatch):
@@ -254,8 +262,9 @@ def test_disabled_mode_status_uses_the_same_id_based_permissions(client, monkeyp
     monkeypatch.setattr(settings, "initial_admin_ids", "l00123456,z00876543")
     monkeypatch.setattr(settings, "local_actor_id", "local-test-user")
     monkeypatch.setattr(settings, "local_actor_name", "l00123456")
-    assert client.get("/api/auth/status").json()["actor"]["role"] == "member"
-    assert client.get("/api/access-grants").status_code == 403
+    denied = client.get("/api/auth/status")
+    assert denied.status_code == 403
+    assert denied.json()["error"]["code"] == "ACCESS_DENIED"
     monkeypatch.setattr(settings, "initial_admin_ids", "l00123456,z00876543,local-test-user")
     assert client.get("/api/auth/status").json()["actor"]["role"] == "admin"
     assert client.get("/api/access-grants").status_code == 200

@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router-dom';
 import AuthGate, { profileForActor, shouldAutoSignIn, signInUrl } from './AuthGate';
 import UserMenu from './UserMenu';
 import type { AuthStatus } from './types';
+import { ApiError } from './api';
 
 const clients: QueryClient[] = [];
 function newClient() {
@@ -99,6 +100,18 @@ describe('environment-controlled sign-in gate', () => {
     const html = renderGate(client);
     expect(html).toContain('暂时无法连接服务');
     expect(html).toContain('重新检查登录状态');
+    expect(html).not.toContain('Project workspace');
+  });
+
+  it('shows a dedicated access-denied page for an unassigned W3 account', async () => {
+    const client = newClient();
+    await client.fetchQuery({ queryKey: ['auth-status'], queryFn: () => {
+      throw new ApiError(403, 'Access denied.', 'ACCESS_DENIED');
+    } }).catch(() => {});
+    const html = renderGate(client);
+    expect(html).toContain('没有系统访问权限');
+    expect(html).toContain('如需使用，请联系 Olivia Fang 84416467 开通权限');
+    expect(html).toContain('/ai_procurement/api/auth/logout');
     expect(html).not.toContain('Project workspace');
   });
 

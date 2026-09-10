@@ -48,7 +48,8 @@ authenticated account after trimming spaces and ignoring case; retain account
 prefixes and leading zeros. Names and Owner-directory results are for display
 only and never grant administrator access. Every listed account is an initial
 administrator and cannot be demoted or removed through the permissions page.
-Other accounts are members unless explicitly granted an administrator role there.
+All other accounts are denied access until an administrator explicitly adds them
+as an administrator or member through the permissions page.
 The legacy `W3_DEFAULT_ROLE` setting no longer grants permissions.
 
 After editing `.env`, run `docker compose up -d --force-recreate backend frontend`,

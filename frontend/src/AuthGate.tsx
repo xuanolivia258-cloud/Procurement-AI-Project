@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation } from 'react-router-dom';
-import { api, appUrl, AUTH_REQUIRED_EVENT } from './api';
+import { api, ApiError, appUrl, AUTH_REQUIRED_EVENT } from './api';
 import type { Actor, AuthStatus } from './types';
 import { fetchOwnerProfile } from './ownerProfile';
 
@@ -95,6 +95,12 @@ export default function AuthGate({ language, children }: {
     <div className="auth-mark">C</div><p>{autoSignIn
       ? (zh ? '正在前往 Huawei W3…' : 'Redirecting to Huawei W3…')
       : (zh ? '正在检查登录状态…' : 'Checking your session…')}</p>
+  </div></div>;
+
+  if (error instanceof ApiError && error.code === 'ACCESS_DENIED') return <div className="auth-stage"><div className="auth-card">
+    <div className="auth-mark">!</div><h1>{zh ? '没有系统访问权限' : 'Access not granted'}</h1>
+    <p role="alert">{zh ? '如需使用，请联系 Olivia Fang 84416467 开通权限。' : 'To request access, please contact Olivia Fang 84416467.'}</p>
+    <a className="auth-button" href={appUrl('/api/auth/logout')}><span aria-hidden="true">H</span>{zh ? '退出当前账号' : 'Sign out'}</a>
   </div></div>;
 
   if (error) return <div className="auth-stage"><div className="auth-card">
