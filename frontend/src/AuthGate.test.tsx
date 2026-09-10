@@ -111,7 +111,9 @@ describe('environment-controlled sign-in gate', () => {
     const html = renderGate(client);
     expect(html).toContain('没有系统访问权限');
     expect(html).toContain('如需使用，请联系 Olivia Fang 84416467 开通权限');
-    expect(html).toContain('/ai_procurement/api/auth/logout');
+    expect(html).not.toContain('/ai_procurement/api/auth/logout');
+    expect(html).not.toContain('退出当前账号');
+    expect(html).not.toContain('已退出登录');
     expect(html).not.toContain('Project workspace');
   });
 

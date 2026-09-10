@@ -98,9 +98,8 @@ export default function AuthGate({ language, children }: {
   </div></div>;
 
   if (error instanceof ApiError && error.code === 'ACCESS_DENIED') return <div className="auth-stage"><div className="auth-card">
-    <div className="auth-mark">!</div><h1>{zh ? '没有系统访问权限' : 'Access not granted'}</h1>
+    <div className="auth-mark access-denied-mark">!</div><h1>{zh ? '没有系统访问权限' : 'Access not granted'}</h1>
     <p role="alert">{zh ? '如需使用，请联系 Olivia Fang 84416467 开通权限。' : 'To request access, please contact Olivia Fang 84416467.'}</p>
-    <a className="auth-button" href={appUrl('/api/auth/logout')}><span aria-hidden="true">H</span>{zh ? '退出当前账号' : 'Sign out'}</a>
   </div></div>;
 
   if (error) return <div className="auth-stage"><div className="auth-card">
