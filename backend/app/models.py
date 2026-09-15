@@ -32,7 +32,10 @@ class Project(Base):
     request_date: Mapped[date | None] = mapped_column(Date)
     budget: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
     currency: Mapped[str | None] = mapped_column(String(3))
-    exchange_rate: Mapped[Decimal | None] = mapped_column(Numeric(18, 8))
+    # Keep substantially more provider precision than the old 8-decimal
+    # definition. SQLite does not enforce NUMERIC scale, while this mapping
+    # prevents SQLAlchemy from rounding values back to eight decimal places.
+    exchange_rate: Mapped[Decimal | None] = mapped_column(Numeric(38, 20))
     usd_amount: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
     exchange_rate_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     description: Mapped[str | None] = mapped_column(Text)

@@ -116,6 +116,18 @@ def test_project_accepts_supported_currency(client):
     assert client.post("/api/projects", json={"currency": "GBP"}).status_code == 422
 
 
+def test_project_accepts_full_precision_realtime_exchange_rate(client):
+    response = client.post("/api/projects", json={
+        "budget": "100.00",
+        "currency": "CAD",
+        "exchange_rate": "0.12345678901234567890",
+    })
+
+    assert response.status_code == 201
+    assert response.json()["exchange_rate"].startswith("0.1234567890123456")
+    assert response.json()["usd_amount"] == "12.35"
+
+
 def test_ceg_can_be_reused_when_copying_a_project(client):
     assert client.post("/api/projects", json={"ceg": "CEG-100"}).status_code == 201
     response = client.post("/api/projects", json={"ceg": "ceg-100"})

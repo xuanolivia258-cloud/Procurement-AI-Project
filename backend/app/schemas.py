@@ -35,7 +35,9 @@ class ProjectFields(BaseModel):
     request_date: date | None = None
     budget: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
     currency: Currency | None = None
-    exchange_rate: Decimal | None = Field(default=None, gt=0, max_digits=18, decimal_places=8)
+    # Exchange-rate providers may return varying precision. Do not reject a
+    # valid positive rate merely because it has more fractional digits.
+    exchange_rate: Decimal | None = Field(default=None, gt=0)
     usd_amount: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
     exchange_rate_at: datetime | None = None
     description: str | None = None
