@@ -235,6 +235,8 @@ td em { color: var(--danger); font-size: 11px; font-weight: 550; }
 .rate-source, .rate-feedback.loading { color: #687e9a; }.rate-source.stale { color: #966316; }
 .rate-feedback.error { align-items: flex-start; color: var(--danger); }.rate-feedback.error button { color: var(--primary); }
 .modal footer { margin: 22px -26px 0; padding: 16px 26px; background: #fff; backdrop-filter: none; }
+.project-view-modal>footer { margin: 0; padding-right: 26px; }
+.project-view-modal>footer .button { margin-right: 16px; }
 .procurement-progress { grid-template-columns: repeat(5, minmax(0, 1fr)); padding: 17px 10px; border-color: #e2e9f3; border-radius: 7px; background: #f8fafd; }
 .progress-step { gap: 8px; color: #7b8ba0; font-size: 11px; font-weight: 500; }
 .progress-step:not(:last-child):after { top: 13px; left: calc(50% + 17px); width: calc(100% - 34px); height: 1px; background: #d3deec; }
