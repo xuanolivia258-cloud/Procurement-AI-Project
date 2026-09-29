@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
-import App, { CegDonut, cegColor } from './App';
+import App, { CegDonut, cegColor, ProjectViewDialog } from './App';
 import { SIDEBAR_STORAGE_KEY } from './sidebarState';
 import type { AuthStatus, DashboardData } from './types';
 
@@ -80,5 +80,25 @@ describe('executive workspace presentation', () => {
     expect(cegColor(0)).not.toBe(cegColor(1));
     renderToStaticMarkup(<CegDonut title="Count" items={rows} values={[3, 1]} centerValue="4" centerLabel="Projects" />);
     expect(rows).toEqual(before);
+  });
+
+  it('renders project row details as a read-only view', () => {
+    const project = {
+      id: 42, version: 1, lifecycle: 'active' as const, is_overdue: false, project_cycle_business_days: null,
+      project_priority: 'High' as const, ceg: 'Jessie Lin', bu: 'Finance', requestor: 'Olivia', request_date: '2026-09-01',
+      budget: '100.00', currency: 'CAD' as const, exchange_rate: '0.75', usd_amount: '75.00', exchange_rate_at: '',
+      description: 'Supplier onboarding', supplier_name: 'Example Supplier', supplier_type: 'new', procurement_strategy: 'rfp',
+      procurement_status: 'Sourcing', procurement_status_notes: 'Review in progress', pr_approved_date: '2026-09-02',
+      estimated_closing_date: '2026-10-01', ec_form: 'Y' as const, contract_required: 'N' as const, po_release_date: '',
+      created_by: 'olivia', updated_by: 'olivia', completed_at: null, archived_at: null, deleted_at: null, deleted_by: null,
+      created_at: '2026-09-01T00:00:00Z', updated_at: '2026-09-01T00:00:00Z',
+    };
+    const html = renderToStaticMarkup(<ProjectViewDialog project={project} language="en" referenceOptions={[]} close={() => undefined}/>);
+    expect(html).toContain('Read-only project information');
+    expect(html).toContain('Supplier onboarding');
+    expect(html).toContain('USD 75.00');
+    expect(html).toContain('readOnly=""');
+    expect(html).not.toContain('Save');
+    expect(html).not.toContain('Edit Project');
   });
 });
