@@ -14,7 +14,7 @@ const emptyProject: ProjectInput = {
   pr_approved_date: '', estimated_closing_date: '', contract_required: '', po_release_date: '',
 };
 
-export const CEG_OPTIONS = ['Jessie Lin', 'Warren Joseph Litwin', 'Jerry Chang', 'Abby Ho', 'Yiwen Chen', 'Jiemin Liu'];
+export const CEG_OPTIONS = ['Jessie Lin', 'Warren Joseph Litwin', 'Jerry Chang', 'Abby Ho', 'Yiwen Chen', 'Jiemin Liu', 'Celia Tsai'];
 
 const copy = {
   en: { dashboard: 'Dashboard', projects: 'Projects', analysis: 'Analysis', settings: 'Permission Management', recycleBin: 'Recycle Bin', create: 'Create Project', edit: 'Edit Project', save: 'Save', cancel: 'Cancel', export: 'Export Excel', all: 'All', filters: 'Filters', audit: 'Audit History', active: 'Active', completed: 'Completed', overdue: 'Overdue', totalBudget: 'Total Amount for Active', noProjects: 'No matching projects', conflict: 'This project changed elsewhere. Your entries are preserved; refresh before saving again.' },
