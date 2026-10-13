@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, NavLink, Route, Routes, useLocation, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, NavLink, Route, Routes, useLocation, useSearchParams } from 'react-router-dom';
 import { api, ApiError, appUrl, queryString } from './api';
 import AuthGate from './AuthGate';
 import UserMenu from './UserMenu';
@@ -115,6 +115,7 @@ function Layout({ language, setLanguage, actor, authMode }: { language: Language
         <Route path="/budget-analysis" element={<BudgetAnalysis language={language} />} />
         <Route path="/recycle-bin" element={<RecycleBin language={language} />} />
         <Route path="/settings" element={<PermissionManagement language={language} actor={actor} />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       </div>
     </main>
