@@ -75,6 +75,23 @@ def test_member_only_sees_and_changes_own_projects(client):
     assert client.delete(f"/api/projects/{own['id']}?version={own['version']}").status_code == 404
 
 
+def test_member_can_bulk_change_ceg_for_own_projects_but_not_others(client):
+    app.dependency_overrides[get_actor] = lambda: actor("member-a", "member")
+    own = client.post("/api/projects", json={"ceg": "OLD-A"}).json()
+    changed = client.post("/api/projects/bulk-ceg", json={
+        "ceg": "Celia Tsai", "projects": [{"id": own["id"], "version": own["version"]}],
+    })
+    assert changed.status_code == 200
+    assert changed.json()["updated"] == 1
+
+    app.dependency_overrides[get_actor] = lambda: actor("member-b", "member")
+    forbidden = client.post("/api/projects/bulk-ceg", json={
+        "ceg": "Jessie Lin", "projects": [{"id": own["id"], "version": own["version"] + 1}],
+    })
+    assert forbidden.status_code == 409
+    assert forbidden.json()["error"]["code"] == "BULK_CEG_CONFLICT"
+
+
 def test_admin_sees_all_projects_and_manages_grants(client):
     app.dependency_overrides[get_actor] = lambda: actor("member-a", "member")
     client.post("/api/projects", json={"ceg": "A"})

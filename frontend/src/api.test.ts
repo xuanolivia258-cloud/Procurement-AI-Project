@@ -44,7 +44,7 @@ describe('appUrl', () => {
 describe('project payload', () => {
   it('normalizes optional blank fields to null', () => {
     const payload = toPayload({
-      project_priority: '', ceg: '', requestor: '', bu: '', request_date: '', budget: '', currency: '', exchange_rate: '', usd_amount: '', exchange_rate_at: '', description: '',
+      project_priority: '', ceg: '', requestor: '', bu: '', request_date: '', budget: '', currency: '', exchange_rate: '', usd_amount: '', exchange_rate_at: '', actual_price: '', actual_currency: '', actual_exchange_rate: '', actual_usd_amount: '', actual_exchange_rate_at: '', saving_amount: '', saving_currency: '', saving_usd_amount: '', description: '',
       supplier_name: '', supplier_type: '', procurement_strategy: '', procurement_status: '', procurement_status_notes: '', ec_form: '',
       pr_approved_date: '', estimated_closing_date: '', contract_required: '', po_release_date: '',
     });
@@ -55,7 +55,7 @@ describe('project payload', () => {
 
 describe('CEG priority ordering', () => {
   it('orders High-heavy CEGs first, then Medium-heavy, then Normal-heavy', () => {
-    const base = { project_count: 1, usd_amount: '0', completed_count: 0, overdue_count: 0 };
+    const base = { project_count: 1, usd_amount: '0', saving_usd_amount: '0', completed_count: 0, overdue_count: 0 };
     const items = [
       { ...base, ceg: 'Normal CEG', high_priority_count: 0, medium_priority_count: 0, normal_priority_count: 8 },
       { ...base, ceg: 'Medium CEG', high_priority_count: 0, medium_priority_count: 5, normal_priority_count: 0 },

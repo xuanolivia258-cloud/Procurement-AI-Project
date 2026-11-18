@@ -9,8 +9,8 @@ import type { AuthStatus, DashboardData } from './types';
 const clients: QueryClient[] = [];
 afterEach(() => { clients.forEach((c) => c.clear()); clients.length = 0; vi.unstubAllGlobals(); });
 const rows = [
-  { ceg: 'Morgan Alexander Thompson', project_count: 3, usd_amount: '123456.78' },
-  { ceg: 'Jamie Chen', project_count: 1, usd_amount: '43210.99' },
+  { ceg: 'Morgan Alexander Thompson', project_count: 3, usd_amount: '123456.78', saving_usd_amount: '12345.67' },
+  { ceg: 'Jamie Chen', project_count: 1, usd_amount: '43210.99', saving_usd_amount: '3210.99' },
 ];
 const dashboard: DashboardData = { lifecycle: { active: 3, completed: 1 }, overdue: 1,
   total_budget: '123456.78', priority: {}, procurement_status: {}, ceg_overview: rows };
@@ -87,6 +87,8 @@ describe('executive workspace presentation', () => {
       id: 42, version: 1, lifecycle: 'active' as const, is_overdue: false, project_cycle_business_days: null,
       project_priority: 'High' as const, ceg: 'Jessie Lin', bu: 'Finance', requestor: 'Olivia', request_date: '2026-09-01',
       budget: '100.00', currency: 'CAD' as const, exchange_rate: '0.75', usd_amount: '75.00', exchange_rate_at: '',
+      actual_price: '90.00', actual_currency: 'CAD' as const, actual_exchange_rate: '0.75', actual_usd_amount: '67.50', actual_exchange_rate_at: '',
+      saving_amount: '10.00', saving_currency: 'CAD' as const, saving_usd_amount: '7.50',
       description: 'Supplier onboarding', supplier_name: 'Example Supplier', supplier_type: 'new', procurement_strategy: 'rfp',
       procurement_status: 'Sourcing', procurement_status_notes: 'Review in progress', pr_approved_date: '2026-09-02',
       estimated_closing_date: '2026-10-01', ec_form: 'Y' as const, contract_required: 'N' as const, po_release_date: '',

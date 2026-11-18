@@ -37,7 +37,7 @@ from .logging_config import (
 )
 from .models import AccessGrant, Lifecycle, Project, ProjectAuditLog, ReferenceOption, utcnow
 from .schemas import (
-    AccessGrantRead, AccessGrantUpsert, Actor, AuditLogRead, BulkProjectDeleteRequest, Currency, LifecycleRequest, PaginatedProjects, ProjectCreate,
+    AccessGrantRead, AccessGrantUpsert, Actor, AuditLogRead, BulkProjectCegRequest, BulkProjectDeleteRequest, Currency, LifecycleRequest, PaginatedProjects, ProjectCreate,
     ProjectRead, ProjectUpdate, ReferenceOptionCreate, ReferenceOptionRead,
     ReferenceOptionUpdate,
 )
@@ -809,6 +809,28 @@ def bulk_delete_projects(payload: BulkProjectDeleteRequest, request: Request, db
     return {"deleted": len(projects)}
 
 
+@app.post("/api/projects/bulk-ceg")
+def bulk_change_project_ceg(payload: BulkProjectCegRequest, request: Request, db: Session = Depends(get_db), actor: Actor = Depends(get_actor)):
+    requested = {item.id: item.version for item in payload.projects}
+    projects = list(db.scalars(select(Project).where(Project.id.in_(requested), *ownership_filter(actor))))
+    found = {project.id: project for project in projects}
+    missing = sorted(set(requested) - set(found))
+    conflicts = sorted(project_id for project_id, project in found.items() if project.version != requested[project_id] or project.deleted_at is not None)
+    if missing or conflicts:
+        raise HTTPException(409, detail={"code": "BULK_CEG_CONFLICT", "message": "Some selected projects changed or no longer exist. Refresh and try again.", "missing_ids": missing, "conflict_ids": conflicts})
+    now = utcnow()
+    for project in projects:
+        before = project.ceg
+        project.ceg = payload.ceg
+        project.version += 1
+        project.updated_by = actor.id
+        project.updated_at = now
+        add_audit(db, project, "bulk_ceg_changed", {"ceg": {"before": before, "after": payload.ceg}}, actor)
+    db.commit()
+    log_operation("project_bulk_ceg_change", actor.id, ceg=payload.ceg, count=len(projects), request_id=request.state.request_id)
+    return {"updated": len(projects), "ceg": payload.ceg}
+
+
 @app.get("/api/recycle-bin", response_model=PaginatedProjects)
 def list_recycle_bin(page: int = Query(1, ge=1), page_size: int = Query(25, ge=1, le=100), db: Session = Depends(get_db), actor: Actor = Depends(get_actor)):
     filters = [Project.deleted_at.is_not(None), *ownership_filter(actor)]
@@ -988,14 +1010,15 @@ def dashboard(db: Session = Depends(get_db), actor: Actor = Depends(get_actor)):
         *scope, Project.lifecycle == Lifecycle.active.value,
     )) or 0
     ceg_name = func.coalesce(func.nullif(Project.ceg, ""), "Unassigned")
-    ceg_amount = func.coalesce(func.sum(Project.usd_amount), 0)
+    ceg_amount = func.coalesce(func.sum(Project.actual_usd_amount), 0)
+    ceg_saving = func.coalesce(func.sum(Project.saving_usd_amount), 0)
     ceg_overview_rows = db.execute(
-        select(ceg_name, func.count(), ceg_amount)
+        select(ceg_name, func.count(), ceg_amount, ceg_saving)
         .where(*scope)
         .group_by(ceg_name)
         .order_by(ceg_amount.desc(), func.count().desc())
     ).all()
-    ceg_overview = [{"ceg": ceg, "project_count": count, "usd_amount": str(amount)} for ceg, count, amount in ceg_overview_rows]
+    ceg_overview = [{"ceg": ceg, "project_count": count, "usd_amount": str(amount), "saving_usd_amount": str(saving)} for ceg, count, amount, saving in ceg_overview_rows]
     return {"lifecycle": lifecycle_counts, "overdue": overdue, "total_budget": str(total_budget), "priority": priority_counts, "procurement_status": status_counts, "ceg_overview": ceg_overview}
 
 
@@ -1045,7 +1068,8 @@ def ceg_analysis(
     rows = db.execute(select(
         Project.ceg,
         func.count(),
-        func.coalesce(func.sum(Project.usd_amount), 0),
+        func.coalesce(func.sum(Project.actual_usd_amount), 0),
+        func.coalesce(func.sum(Project.saving_usd_amount), 0),
         func.sum(case((Project.project_priority == "High", 1), else_=0)),
         func.sum(case((Project.project_priority == "Medium", 1), else_=0)),
         func.sum(case((Project.project_priority == "Normal", 1), else_=0)),
@@ -1054,14 +1078,16 @@ def ceg_analysis(
             (Project.lifecycle == Lifecycle.active.value)
             & Project.estimated_closing_date.is_not(None)
             & (Project.estimated_closing_date < today), 1), else_=0)),
-    ).where(*filters).group_by(Project.ceg).order_by(func.coalesce(func.sum(Project.usd_amount), 0).desc(), func.count().desc())).all()
+    ).where(*filters).group_by(Project.ceg).order_by(func.coalesce(func.sum(Project.actual_usd_amount), 0).desc(), func.count().desc())).all()
 
     items = [{
         "ceg": row[0] or "Unassigned", "project_count": row[1], "usd_amount": str(row[2]),
-        "high_priority_count": row[3] or 0, "medium_priority_count": row[4] or 0,
-        "normal_priority_count": row[5] or 0, "completed_count": row[6] or 0,
-        "overdue_count": row[7] or 0,
+        "saving_usd_amount": str(row[3]),
+        "high_priority_count": row[4] or 0, "medium_priority_count": row[5] or 0,
+        "normal_priority_count": row[6] or 0, "completed_count": row[7] or 0,
+        "overdue_count": row[8] or 0,
     } for row in rows]
+    total_actual_usd = db.scalar(select(func.coalesce(func.sum(Project.actual_usd_amount), 0)).where(*filters)) or 0
     option_filters = [Project.deleted_at.is_(None), *ownership_filter(actor)]
     ceg_options = list(db.scalars(select(Project.ceg).where(*option_filters, Project.ceg.is_not(None), Project.ceg != "").distinct().order_by(Project.ceg)))
     bu_options = list(db.scalars(select(Project.bu).where(*option_filters, Project.bu.is_not(None), Project.bu != "").distinct().order_by(Project.bu)))
@@ -1069,7 +1095,8 @@ def ceg_analysis(
         "items": items,
         "totals": {
             "project_count": sum(item["project_count"] for item in items),
-            "usd_amount": str(sum((Decimal(item["usd_amount"]) for item in items), Decimal("0"))),
+            "usd_amount": str(total_actual_usd),
+            "saving_usd_amount": str(sum((Decimal(item["saving_usd_amount"]) for item in items), Decimal("0"))),
             "high_priority_count": sum(item["high_priority_count"] for item in items),
         },
         "options": {"ceg": ceg_options, "bu": bu_options},
@@ -1224,7 +1251,9 @@ def export_monthly_report(
 EXPORT_COLUMNS = [
     ("Priority", "project_priority"), ("CEG", "ceg"), ("BU", "bu"), ("BU Requestor", "requestor"),
     ("Request Date", "request_date"), ("Budget (excl.tax)", "budget"), ("Currency", "currency"),
-    ("Exchange Rate", "exchange_rate"), ("USD Amount", "usd_amount"), ("Description", "description"),
+    ("Exchange Rate", "exchange_rate"), ("USD Amount", "usd_amount"), ("Actual Price (Excl. Tax)", "actual_price"),
+    ("Actual Currency", "actual_currency"), ("Actual Exchange Rate", "actual_exchange_rate"), ("Actual USD Amount", "actual_usd_amount"),
+    ("Saving Amount (Excl. Tax)", "saving_amount"), ("Saving Currency", "saving_currency"), ("Saving USD Amount", "saving_usd_amount"), ("Description", "description"),
     ("Supplier Name", "supplier_name"), ("Supplier Type", "supplier_type"),
     ("Procurement Strategy", "procurement_strategy"), ("Procurement Status", "procurement_status"),
     ("Procurement Status Notes", "procurement_status_notes"),

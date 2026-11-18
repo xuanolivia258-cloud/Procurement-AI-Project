@@ -28,6 +28,14 @@ export interface ProjectInput {
   exchange_rate: string;
   usd_amount: string;
   exchange_rate_at: string;
+  actual_price: string;
+  actual_currency: '' | 'CAD' | 'USD' | 'CNY' | 'EUR';
+  actual_exchange_rate: string;
+  actual_usd_amount: string;
+  actual_exchange_rate_at: string;
+  saving_amount: string;
+  saving_currency: '' | 'CAD' | 'USD' | 'CNY' | 'EUR';
+  saving_usd_amount: string;
   description: string;
   supplier_name: string;
   supplier_type: string;
@@ -41,9 +49,11 @@ export interface ProjectInput {
   po_release_date: string;
 }
 
-export interface Project extends Omit<ProjectInput, 'budget'> {
+export interface Project extends Omit<ProjectInput, 'budget' | 'actual_price' | 'saving_amount'> {
   id: number;
   budget: string | null;
+  actual_price: string | null;
+  saving_amount: string | null;
   lifecycle: Lifecycle;
   version: number;
   is_overdue: boolean;
@@ -108,13 +118,14 @@ export interface DashboardData {
   total_budget: string;
   priority: Record<string, number>;
   procurement_status: Record<string, number>;
-  ceg_overview: { ceg: string; project_count: number; usd_amount: string }[];
+  ceg_overview: { ceg: string; project_count: number; usd_amount: string; saving_usd_amount: string }[];
 }
 
 export interface CegAnalysisItem {
   ceg: string;
   project_count: number;
   usd_amount: string;
+  saving_usd_amount: string;
   high_priority_count: number;
   medium_priority_count: number;
   normal_priority_count: number;
@@ -124,7 +135,7 @@ export interface CegAnalysisItem {
 
 export interface CegAnalysisData {
   items: CegAnalysisItem[];
-  totals: { project_count: number; usd_amount: string; high_priority_count: number };
+  totals: { project_count: number; usd_amount: string; saving_usd_amount: string; high_priority_count: number };
   options: { ceg: string[]; bu: string[] };
 }
 

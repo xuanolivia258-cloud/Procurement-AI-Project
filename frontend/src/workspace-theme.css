@@ -103,7 +103,7 @@ button, a, input, select, textarea { transition: background-color .16s ease, bor
 .ceg-preview header p, .ceg-chart header p, .priority-mix header p, .budget-chart header p { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
 .ceg-preview header a, .ceg-preview>header>a { color: var(--primary); font-size: 12px; font-weight: 550; }
 .ceg-preview header a:hover { text-decoration: underline; }
-.ceg-preview .ceg-pies { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0; }
+.ceg-preview .ceg-pies { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; }
 .ceg-pie-card { align-items: center; min-width: 0; padding: 16px 14px 0; gap: 0; border-top: 1px solid #edf1f6; }
 .ceg-pie-card+.ceg-pie-card { border-left: 1px solid #edf1f6; }
 .ceg-pie-card h3 { align-self: flex-start; margin: 0 0 6px; color: #50617a; font-size: 13px; font-weight: 600; }
@@ -178,7 +178,7 @@ td em { color: var(--danger); font-size: 11px; font-weight: 550; }
 
 /* Analysis: the same palette and information hierarchy as the overview. */
 .analysis-filters { grid-template-columns: repeat(5, minmax(120px, 1fr)) auto; padding: 20px; }
-.analysis-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.analysis-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .analysis-metrics article { min-width: 0; min-height: 112px; padding: 19px 22px; border-color: var(--line); border-left: 3px solid #2f7bff; border-radius: 8px; }
 .analysis-metrics article:nth-child(2) { border-left-color: #38619b; }
 .analysis-metrics article:nth-child(3) { border-left-color: #c44759; }
@@ -229,6 +229,7 @@ td em { color: var(--danger); font-size: 11px; font-weight: 550; }
 .section-heading h3 { color: #304967; font-size: 15px; font-weight: 650; }
 .section-heading p { color: var(--muted); font-size: 12px; }
 .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 22px; }
+.form-grid.financial-form-grid { grid-template-columns: minmax(0, 1fr) 112px minmax(0, 1fr); }
 .financial-section { border-color: #d7e4f5; background: #fff; }.financial-section:after { display: none; }
 .financial-section input[readonly] { color: #345f9d; border-color: #dbe6f6; background: #f3f7fd; font-weight: 600; }
 .rate-source, .rate-feedback { margin: 0; font-size: 11px; font-weight: 400; line-height: 1.5; }

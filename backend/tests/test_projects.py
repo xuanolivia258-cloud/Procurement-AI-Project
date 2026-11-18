@@ -128,6 +128,50 @@ def test_project_accepts_full_precision_realtime_exchange_rate(client):
     assert response.json()["usd_amount"] == "12.35"
 
 
+def test_project_persists_actual_price_and_calculates_actual_usd_amount(client):
+    response = client.post("/api/projects", json={
+        "currency": "EUR", "exchange_rate": "1.125",
+        "actual_price": "120.50",
+        "actual_currency": "EUR",
+        "actual_exchange_rate": "1.125",
+        "actual_usd_amount": "999999.99",
+    })
+    assert response.status_code == 201
+    project = response.json()
+    assert project["actual_price"] == "120.50"
+    assert project["actual_currency"] == "EUR"
+    assert project["actual_usd_amount"] == "135.56"
+
+    fetched = client.get(f"/api/projects/{project['id']}")
+    assert fetched.status_code == 200
+    assert fetched.json()["actual_usd_amount"] == "135.56"
+
+
+def test_project_calculates_saving_amount_from_target_and_actual_prices(client):
+    response = client.post("/api/projects", json={
+        "budget": "150.00", "currency": "EUR", "exchange_rate": "1.10",
+        "actual_price": "120.00", "actual_currency": "EUR", "actual_exchange_rate": "1.10",
+        "saving_amount": "999.00", "saving_usd_amount": "999.00",
+    })
+    assert response.status_code == 201
+    project = response.json()
+    assert project["saving_amount"] == "30.00"
+    assert project["saving_currency"] == "EUR"
+    assert project["saving_usd_amount"] == "33.00"
+
+
+def test_actual_currency_and_rate_always_follow_target(client):
+    response = client.post("/api/projects", json={
+        "budget": "100.00", "currency": "CAD", "exchange_rate": "0.72",
+        "actual_price": "80.00", "actual_currency": "EUR", "actual_exchange_rate": "1.10",
+    })
+    assert response.status_code == 201
+    project = response.json()
+    assert project["actual_currency"] == "CAD"
+    assert project["actual_usd_amount"] == "57.60"
+    assert project["actual_usd_amount"] == "57.60"
+
+
 def test_ceg_can_be_reused_when_copying_a_project(client):
     assert client.post("/api/projects", json={"ceg": "CEG-100"}).status_code == 201
     response = client.post("/api/projects", json={"ceg": "ceg-100"})
@@ -196,6 +240,19 @@ def test_projects_can_be_bulk_deleted(client):
     assert client.get("/api/recycle-bin").json()["total"] == 0
 
 
+def test_selected_projects_can_change_ceg_in_bulk(client):
+    first = client.post("/api/projects", json={"ceg": "Old CEG A"}).json()
+    second = client.post("/api/projects", json={"ceg": "Old CEG B", "po_release_date": "2026-08-14"}).json()
+    response = client.post("/api/projects/bulk-ceg", json={
+        "ceg": "Celia Tsai",
+        "projects": [{"id": first["id"], "version": first["version"]}, {"id": second["id"], "version": second["version"]}],
+    })
+    assert response.status_code == 200
+    assert response.json() == {"updated": 2, "ceg": "Celia Tsai"}
+    assert client.get(f"/api/projects/{first['id']}").json()["ceg"] == "Celia Tsai"
+    assert client.get(f"/api/projects/{second['id']}").json()["ceg"] == "Celia Tsai"
+
+
 def test_filters_dashboard_and_excel_export(client):
     client.post("/api/projects", json={"ceg": "HIGH-1", "project_priority": "High", "budget": "125.50", "pr_approved_date": "2026-08-07", "po_release_date": "2026-08-11"})
     client.post("/api/projects", json={"ceg": "NORMAL-1", "project_priority": "Normal"})
@@ -251,8 +308,8 @@ def test_filters_dashboard_and_excel_export(client):
 
 
 def test_dashboard_total_budget_sums_project_usd_amounts(client):
-    client.post("/api/projects", json={"ceg": "CAD-1", "budget": "100.00", "currency": "CAD", "usd_amount": "72.50"})
-    client.post("/api/projects", json={"ceg": "CNY-1", "budget": "1000.00", "currency": "CNY", "usd_amount": "138.25"})
+    client.post("/api/projects", json={"ceg": "CAD-1", "budget": "100.00", "actual_price": "80.00", "currency": "CAD", "exchange_rate": "0.725"})
+    client.post("/api/projects", json={"ceg": "CNY-1", "budget": "1000.00", "actual_price": "900.00", "currency": "CNY", "exchange_rate": "0.13825"})
     client.post("/api/projects", json={"ceg": "NO-USD", "budget": "999.00", "currency": "CAD"})
     client.post("/api/projects", json={"ceg": "COMPLETED-USD", "budget": "500.00", "currency": "USD", "exchange_rate": "1", "po_release_date": "2026-08-14"})
 
@@ -260,8 +317,18 @@ def test_dashboard_total_budget_sums_project_usd_amounts(client):
 
     assert dashboard["total_budget"] == "210.75"
     overview = {item["ceg"]: item for item in dashboard["ceg_overview"]}
-    assert overview["CAD-1"] == {"ceg": "CAD-1", "project_count": 1, "usd_amount": "72.50"}
-    assert overview["COMPLETED-USD"] == {"ceg": "COMPLETED-USD", "project_count": 1, "usd_amount": "500.00"}
+    assert overview["CAD-1"] == {"ceg": "CAD-1", "project_count": 1, "usd_amount": "58.00", "saving_usd_amount": "14.50"}
+    assert overview["COMPLETED-USD"] == {"ceg": "COMPLETED-USD", "project_count": 1, "usd_amount": "0.00", "saving_usd_amount": "0.00"}
+
+
+def test_dashboard_ceg_overview_sums_saving_usd_amount(client):
+    client.post("/api/projects", json={
+        "ceg": "CEG-SAVING", "budget": "100.00", "actual_price": "80.00",
+        "currency": "USD", "exchange_rate": "1",
+    })
+    dashboard = client.get("/api/dashboard").json()
+    overview = {item["ceg"]: item for item in dashboard["ceg_overview"]}
+    assert overview["CEG-SAVING"]["saving_usd_amount"] == "20.00"
 
 
 def test_budget_analysis_groups_usd_amount_by_pr_approved_month(client):
@@ -281,12 +348,12 @@ def test_budget_analysis_groups_usd_amount_by_pr_approved_month(client):
 def test_ceg_analysis_summarizes_amount_priority_and_filters(client):
     client.post("/api/projects", json={
         "ceg": "CEG-A", "bu": "Finance", "project_priority": "High",
-        "pr_approved_date": "2026-01-15", "budget": "100.00", "currency": "USD", "exchange_rate": "1",
+        "pr_approved_date": "2026-01-15", "budget": "100.00", "actual_price": "80.00", "currency": "USD", "exchange_rate": "1",
         "estimated_closing_date": "2020-01-01",
     })
     client.post("/api/projects", json={
         "ceg": "CEG-A", "bu": "Finance", "project_priority": "Medium",
-        "pr_approved_date": "2026-02-10", "budget": "50.00", "currency": "USD", "exchange_rate": "1",
+        "pr_approved_date": "2026-02-10", "budget": "50.00", "actual_price": "40.00", "currency": "USD", "exchange_rate": "1",
         "po_release_date": "2026-02-20",
     })
     client.post("/api/projects", json={
@@ -296,9 +363,9 @@ def test_ceg_analysis_summarizes_amount_priority_and_filters(client):
 
     result = client.get("/api/ceg-analysis?from_month=2026-01&to_month=2026-02&ceg=CEG-A").json()
 
-    assert result["totals"] == {"project_count": 2, "usd_amount": "150.00", "high_priority_count": 1}
+    assert result["totals"] == {"project_count": 2, "usd_amount": "120.00", "saving_usd_amount": "30.00", "high_priority_count": 1}
     assert result["items"] == [{
-        "ceg": "CEG-A", "project_count": 2, "usd_amount": "150.00",
+        "ceg": "CEG-A", "project_count": 2, "usd_amount": "120.00", "saving_usd_amount": "30.00",
         "high_priority_count": 1, "medium_priority_count": 1, "normal_priority_count": 0,
         "completed_count": 1, "overdue_count": 1,
     }]

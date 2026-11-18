@@ -40,6 +40,14 @@ class ProjectFields(BaseModel):
     exchange_rate: Decimal | None = Field(default=None, gt=0)
     usd_amount: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
     exchange_rate_at: datetime | None = None
+    actual_price: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
+    actual_currency: Currency | None = None
+    actual_exchange_rate: Decimal | None = Field(default=None, gt=0)
+    actual_usd_amount: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
+    actual_exchange_rate_at: datetime | None = None
+    saving_amount: Decimal | None = Field(default=None, max_digits=18, decimal_places=2)
+    saving_currency: Currency | None = None
+    saving_usd_amount: Decimal | None = Field(default=None, max_digits=18, decimal_places=2)
     description: str | None = None
     supplier_name: str | None = Field(default=None, max_length=300)
     supplier_type: str | None = Field(default=None, max_length=100)
@@ -66,10 +74,29 @@ class ProjectFields(BaseModel):
 
     @model_validator(mode="after")
     def calculate_usd_amount(self):
+        # Actual and target prices are always compared in the same currency
+        # and therefore share the same live exchange-rate snapshot.
+        self.actual_currency = self.currency
+        self.actual_exchange_rate = self.exchange_rate
+        self.actual_exchange_rate_at = self.exchange_rate_at
         if self.budget is not None and self.exchange_rate is not None:
             self.usd_amount = (self.budget * self.exchange_rate).quantize(Decimal("0.01"))
         elif self.budget is None or self.currency is None:
             self.usd_amount = None
+        if self.actual_price is not None and self.actual_exchange_rate is not None:
+            self.actual_usd_amount = (self.actual_price * self.actual_exchange_rate).quantize(Decimal("0.01"))
+        elif self.actual_price is None or self.actual_currency is None:
+            self.actual_usd_amount = None
+        if self.budget is not None and self.actual_price is not None and self.currency == self.actual_currency:
+            self.saving_amount = (self.budget - self.actual_price).quantize(Decimal("0.01"))
+            self.saving_currency = self.currency
+        else:
+            self.saving_amount = None
+            self.saving_currency = None
+        if self.usd_amount is not None and self.actual_usd_amount is not None:
+            self.saving_usd_amount = (self.usd_amount - self.actual_usd_amount).quantize(Decimal("0.01"))
+        else:
+            self.saving_usd_amount = None
         return self
 
 
@@ -117,6 +144,15 @@ class BulkProjectDeleteItem(BaseModel):
 
 class BulkProjectDeleteRequest(BaseModel):
     projects: list[BulkProjectDeleteItem] = Field(min_length=1)
+
+
+class BulkProjectCegRequest(BulkProjectDeleteRequest):
+    ceg: str = Field(min_length=1, max_length=120)
+
+    @field_validator("ceg")
+    @classmethod
+    def normalize_ceg(cls, value: str):
+        return value.strip()
 
 
 class ReferenceOptionCreate(BaseModel):
